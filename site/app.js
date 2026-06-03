@@ -90,12 +90,16 @@ async function renderMarket() {
     r["訊號強度"] ?? "", num(r["當日量(張)"]), num(r["漲跌幅%"]), num(r["收盤價"]),
     r["量價關係"] ?? "", num(r["較MA5倍"]), num(r["較MA20倍"]), r["訊號說明"] ?? "",
   ]);
-  box.innerHTML = "";
+  // 用全新的容器節點重繪：Grid.js(Preact) 會沿用容器殘留的虛擬 DOM 樹，
+  // 直接對同一節點重複 render 會讓新搜尋框的事件接不上（切換日期後搜尋失效）。
+  const fresh = document.createElement("div");
+  fresh.id = box.id;
+  box.replaceWith(fresh);
   new gridjs.Grid({
     columns: cols, data: rows, search: true, sort: true,
     pagination: {limit: 25}, fixedHeader: true,
     language: {search: {placeholder: "搜尋代號 / 名稱…"}, pagination: {previous: "上一頁", next: "下一頁", showing: "顯示", to: "至", of: "共", results: "筆"}},
-  }).render(box);
+  }).render(fresh);
 }
 
 /* ---------- 勝率回測 ---------- */
