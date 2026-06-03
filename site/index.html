@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>每日個股資訊</title>
+<link href="https://cdn.jsdelivr.net/npm/gridjs/dist/theme/mermaid.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/gridjs/dist/gridjs.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{--bg:#0f1419;--panel:#1a2230;--panel2:#222d3d;--line:#2c3a4f;--text:#e6edf3;--muted:#8b9bb0;--accent:#4da3ff;--up:#ff5d5d;--down:#39c46e;--star:#ffcb3d}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Noto Sans TC","Microsoft JhengHei",Segoe UI,sans-serif;font-size:14px}
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:10px 18px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;position:sticky;top:0;z-index:50}
+  header h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.5px}
+  .tabs{display:flex;gap:6px}
+  .tab{padding:7px 14px;border-radius:7px;cursor:pointer;color:var(--muted);border:1px solid transparent;white-space:nowrap}
+  .tab:hover{color:var(--text)}
+  .tab.active{background:var(--accent);color:#06121f;font-weight:700}
+  .spacer{flex:1}
+  .ctrl{display:flex;align-items:center;gap:8px}
+  .ctrl label{color:var(--muted);font-size:13px}
+  select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 10px;font-size:14px}
+  main{padding:18px;max-width:1280px;margin:0 auto}
+  .view{display:none}
+  .view.active{display:block}
+  h2{font-size:16px;margin:4px 0 14px;border-left:4px solid var(--accent);padding-left:10px}
+  h3{font-size:14px;color:var(--muted);margin:22px 0 10px;font-weight:600}
+  .cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:120px}
+  .card .k{color:var(--muted);font-size:12px}
+  .card .v{font-size:20px;font-weight:700;margin-top:3px}
+  .chartbox{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:16px}
+  .chart-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+  .chart-grid img{width:100%;border-radius:8px;background:#fff;cursor:zoom-in}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:860px){.two-col{grid-template-columns:1fr}}
+  table.simple{width:100%;border-collapse:collapse;background:var(--panel);border-radius:10px;overflow:hidden}
+  table.simple th,table.simple td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
+  table.simple th{background:var(--panel2);color:var(--muted);font-weight:600;position:sticky;top:0}
+  table.simple td:first-child,table.simple th:first-child{text-align:left}
+  .up{color:var(--up)}.down{color:var(--down)}.star{color:var(--star);letter-spacing:1px}
+  .gridjs-wrapper,.gridjs-table{font-size:13px}
+  .muted{color:var(--muted)}
+  .stocklist{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .stockchip{background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:6px 14px;cursor:pointer}
+  .stockchip:hover{border-color:var(--accent)}
+  .stockchip.active{background:var(--accent);color:#06121f;font-weight:700}
+  #lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100;align-items:center;justify-content:center;cursor:zoom-out}
+  #lightbox img{max-width:94%;max-height:94%;background:#fff;border-radius:8px}
+  .loading{color:var(--muted);padding:30px;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>每日個股資訊</h1>
+  <div class="tabs">
+    <div class="tab active" data-view="market">大盤放量訊號</div>
+    <div class="tab" data-view="winrate">勝率回測</div>
+    <div class="tab" data-view="stock">個股分析</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="ctrl">
+    <label for="dateSel">日期</label>
+    <select id="dateSel"></select>
+  </div>
+</header>
+<main>
+  <section id="view-market" class="view active">
+    <h2>當日放量訊號</h2>
+    <div id="marketCards" class="cards"></div>
+    <div id="marketGrid"></div>
+  </section>
+  <section id="view-winrate" class="view">
+    <h2>放量訊號勝率回測</h2>
+    <div class="chartbox"><canvas id="wrChart" height="110"></canvas></div>
+    <div id="wrTables"></div>
+  </section>
+  <section id="view-stock" class="view">
+    <h2>個股分析</h2>
+    <div id="stockList" class="stocklist"></div>
+    <div id="stockBody"><div class="loading">請選擇上方個股</div></div>
+  </section>
+</main>
+<div id="lightbox"><img src="" alt=""></div>
+<script src="app.js"></script>
+</body>
+</html>

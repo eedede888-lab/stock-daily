@@ -1,0 +1,8 @@
+# 原始每日資料（不上傳，僅保留 site/data 的處理後資料）
+/data/
+
+# 雜項
+site/smoke.out
+*.log
+.DS_Store
+Thumbs.db
