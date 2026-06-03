@@ -48,7 +48,8 @@ function render() {
   else if (curView === "release") renderRelease();
   else if (curView === "disposed") renderDisposed();
   else if (curView === "winrate") renderWinrate();
-  else renderStock();
+  else if (curView === "stock") renderStock();
+  // help：靜態內容，已在 index.html，無需渲染
 }
 
 /* Grid.js 共用工具 ----------------------------------------------------- */
