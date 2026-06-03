@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A daily stock-information website for Taiwan equities. A partner produces Excel files each day; `build.py` converts them into a compact static site under `site/`, which is published to GitHub Pages. There is no backend, database, or build framework — the front end is hand-written HTML + vanilla JS loading pre-generated data files.
+A daily stock-information website for Taiwan equities. A partner produces Excel files each day; `build.py` converts them into a compact static site under `site/`, which is published to Cloudflare Pages (behind Cloudflare Access login). There is no backend, database, or build framework — the front end is hand-written HTML + vanilla JS loading pre-generated data files.
 
-Live site: https://tongwade.github.io/stock-daily/ — Repo: `tongwade/stock-daily`
+Live site: https://stock-daily-s6v.pages.dev/ (login required via Cloudflare Access) — Repo: `tongwade/stock-daily`. The old GitHub Pages site (github.io) has been **taken down** (workflow disabled, Pages unpublished) and is no longer public.
 
 ## Commands
 
@@ -24,7 +24,9 @@ node site/smoke.js site
 # Local preview: just open site/index.html in a browser.
 # It works over file:// (no server needed) — see the .js-wrapper note below.
 
-# Deploy: commit + push to main; GitHub Actions redeploys site/ automatically.
+# Deploy: publish site/ to Cloudflare Pages (Direct Upload; needs `wrangler login` once).
+npx wrangler pages deploy site --project-name stock-daily
+# git push is now source backup only — it does NOT auto-deploy (GitHub Pages disabled).
 git add -A && git commit -m "..." && git push
 ```
 
@@ -35,11 +37,11 @@ Python deps: `openpyxl` (Excel parsing). The smoke test needs Node.
 1. Drop the day's Excel files into a new `data/YYYYMMDD/` folder.
 2. Run `python build.py` (it only processes dates not yet built).
 3. Run `node site/smoke.js site` to confirm no render errors.
-4. `git push` — Actions rebuilds Pages in ~1 min.
+4. `npx wrangler pages deploy site --project-name stock-daily` — publishes to Cloudflare Pages. (Optionally `git push` to back up source; that no longer deploys anything.)
 
 ## Architecture
 
-Two-stage pipeline: **Excel → (build.py) → site/data/*.js → (static front end) → GitHub Pages**.
+Two-stage pipeline: **Excel → (build.py) → site/data/*.js → (static front end) → Cloudflare Pages**.
 
 ### build.py (Excel → data files)
 - Scans `data/YYYYMMDD/` folders. Files are classified by name in `classify()`:
@@ -63,8 +65,9 @@ Two-stage pipeline: **Excel → (build.py) → site/data/*.js → (static front 
 - Third-party libs (Grid.js, Chart.js) load from CDN via `<script>` in `index.html`.
 
 ### Deployment
-- Active path: `.github/workflows/pages.yml` (GitHub Actions) uploads `./site` as the Pages artifact on push to `main`. Pages is configured with `build_type=workflow`. Pushing to `.github/workflows/` requires the gh token to have the `workflow` scope.
-- `site/deploy.bat` is a **legacy** alternative (treats `site/` itself as a repo root, pushes, and uses classic branch-based Pages). Not used by the current setup.
+- **Active path: Cloudflare Pages (Direct Upload).** Publish with `npx wrangler pages deploy site --project-name stock-daily` (project `stock-daily`, domain `stock-daily-s6v.pages.dev`). The project is **not** git-connected, so pushing to GitHub does NOT update the live site — you must run the wrangler deploy. Auth: `wrangler login` once (OAuth token stored locally).
+- **Access login**: the production domain is protected by a Cloudflare Access (Zero Trust) self-hosted application; only allow-listed emails can view it. Gotcha: the Pages "Restrict previews" toggle only protects *preview* URLs — the production domain is protected by a separate Access app whose hostname must be set to `stock-daily-s6v.pages.dev`. An unauthenticated `curl` to the site should return **302** (redirect to the Access login); a 200 means protection isn't applied.
+- **Legacy / disabled**: `.github/workflows/pages.yml` (GitHub Actions → GitHub Pages) is now **disabled** and the github.io site is unpublished. `site/deploy.bat` is an even older branch-based approach, also unused. Neither is part of the current flow.
 
 ## Gotchas
 
