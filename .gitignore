@@ -7,6 +7,9 @@
 # Claude Code 本機個人設定（不上傳；skills 仍會上傳）
 .claude/settings.local.json
 
+# Wrangler（Cloudflare Pages 部署）本機快取/狀態
+.wrangler/
+
 # 雜項
 site/smoke.out
 *.log

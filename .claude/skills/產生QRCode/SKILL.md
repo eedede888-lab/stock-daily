@@ -1,11 +1,11 @@
 ---
 name: 產生 QR Code
-description: 為指定網址產生 QR Code 圖檔（PNG）。當使用者說「產生 QR Code」「做一個 QR」「給我網站的 QR 條碼」時使用。預設網址為線上網站 https://tongwade.github.io/stock-daily/。
+description: 為指定網址產生 QR Code 圖檔（PNG）。當使用者說「產生 QR Code」「做一個 QR」「給我網站的 QR 條碼」時使用。預設網址為線上網站 https://stock-daily-s6v.pages.dev/。
 ---
 
 # 產生 QR Code
 
-為網址產生 QR Code PNG。預設對象是線上網站 `https://tongwade.github.io/stock-daily/`，使用者也可指定其他網址。
+為網址產生 QR Code PNG。預設對象是線上網站 `https://stock-daily-s6v.pages.dev/`（Cloudflare Pages，需 Access 登入），使用者也可指定其他網址。
 
 ## 步驟
 
@@ -20,7 +20,7 @@ description: 為指定網址產生 QR Code 圖檔（PNG）。當使用者說「�
 
    產生檔案（輸出到 repo 根目錄）：
    ```bash
-   python -c "import qrcode; qrcode.make('https://tongwade.github.io/stock-daily/').save('stock-daily-qrcode.png')"
+   python -c "import qrcode; qrcode.make('https://stock-daily-s6v.pages.dev/').save('stock-daily-qrcode.png')"
    ```
    若是其他網址，請替換成使用者指定的網址，並用易懂的檔名。
 
