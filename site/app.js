@@ -44,9 +44,30 @@ async function init() {
 
 function render() {
   if (curView === "market") renderMarket();
+  else if (curView === "continuation") renderContinuation();
+  else if (curView === "release") renderRelease();
+  else if (curView === "disposed") renderDisposed();
   else if (curView === "winrate") renderWinrate();
   else renderStock();
 }
+
+/* Grid.js 共用工具 ----------------------------------------------------- */
+// 切換日期後若對同一節點重複 render，Grid.js(Preact) 會沿用殘留虛擬 DOM，
+// 導致新搜尋框事件接不上；故每次都換上全新容器節點再 render。
+function gridInto(box, cols, rows, opts = {}) {
+  const fresh = document.createElement("div");
+  fresh.id = box.id;
+  box.replaceWith(fresh);
+  new gridjs.Grid({
+    columns: cols, data: rows, sort: true,
+    search: opts.search !== false,
+    pagination: {limit: opts.limit || 25}, fixedHeader: true,
+    language: {search: {placeholder: opts.placeholder || "搜尋代號 / 名稱…"},
+      pagination: {previous: "上一頁", next: "下一頁", showing: "顯示", to: "至", of: "共", results: "筆"}},
+  }).render(fresh);
+}
+const pctCell = c => { const v = num(c); return gridjs.html(`<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${fmt2(v)}%</span>`); };
+const starCell = c => gridjs.html(`<span class="star">${c || ""}</span>`);
 
 function dayInfo() { return INDEX.dates.find(d => d.date === curDate); }
 
@@ -97,6 +118,106 @@ async function renderMarket() {
     pagination: {limit: 25}, fixedHeader: true,
     language: {search: {placeholder: "搜尋代號 / 名稱…"}, pagination: {previous: "上一頁", next: "下一頁", showing: "顯示", to: "至", of: "共", results: "筆"}},
   }).render(fresh);
+}
+
+/* ---------- 量能延續追蹤 ---------- */
+async function renderContinuation() {
+  const box = $("#contGrid");
+  box.innerHTML = `<div class="loading">載入中…</div>`;
+  let m;
+  try { m = await loadData(`${curDate}/market`); }
+  catch (e) { box.innerHTML = `<div class="loading">本日無資料</div>`; $("#contCards").innerHTML = ""; return; }
+  const rs = m.continuation || [];
+  if (!rs.length) { box.innerHTML = `<div class="loading">本日無量能延續追蹤資料</div>`; $("#contCards").innerHTML = ""; return; }
+  const strong = rs.filter(r => String(r["延續類型"] || "").includes("強力")).length;
+  $("#contCards").innerHTML = [
+    ["延續檔數", fmtInt(rs.length)],
+    ["強力延續", fmtInt(strong)],
+  ].map(c => `<div class="card"><div class="k">${c[0]}</div><div class="v">${c[1]}</div></div>`).join("");
+  const cols = [
+    {name: "代號", width: "76px"},
+    {name: "名稱", width: "92px"},
+    {name: "市場", width: "74px"},
+    {name: "延續類型", width: "124px"},
+    {name: "放量日期", width: "108px"},
+    {name: "放量量(張)", width: "104px", formatter: c => fmtInt(c)},
+    {name: "放量收盤", width: "92px", formatter: c => fmt2(c)},
+    {name: "次日量(張)", width: "104px", formatter: c => fmtInt(c)},
+    {name: "次日量/放量", width: "112px", formatter: c => fmt2(c)},
+    {name: "次日收盤", width: "92px", formatter: c => fmt2(c)},
+    {name: "次日漲跌幅%", width: "118px", formatter: pctCell},
+    {name: "累計漲幅%", width: "108px", formatter: pctCell},
+    {name: "原始星等", width: "92px", formatter: starCell},
+  ];
+  const rows = rs.map(r => [
+    String(r["代號"] ?? ""), r["股票名稱"] ?? "", r["市場"] ?? "", r["延續類型"] ?? "",
+    r["放量日期"] ?? "", num(r["放量量(張)"]), num(r["放量收盤"]), num(r["次日量(張)"]),
+    num(r["次日量/放量"]), num(r["次日收盤"]), num(r["次日漲跌幅%"]), num(r["累計漲幅%"]), r["原始星等"] ?? "",
+  ]);
+  gridInto(box, cols, rows);
+}
+
+/* ---------- 出關股追蹤 ---------- */
+async function renderRelease() {
+  const box = $("#relGrid");
+  box.innerHTML = `<div class="loading">載入中…</div>`;
+  let m;
+  try { m = await loadData(`${curDate}/market`); }
+  catch (e) { box.innerHTML = `<div class="loading">本日無資料</div>`; return; }
+  const rs = m.release || [];
+  if (!rs.length) { box.innerHTML = `<div class="loading">本日無出關股追蹤資料</div>`; return; }
+  const cols = [
+    {name: "代號", width: "76px"},
+    {name: "名稱", width: "100px"},
+    {name: "市場", width: "74px"},
+    {name: "出關類型", width: "120px"},
+    {name: "處置天數", width: "92px", formatter: c => fmtInt(c)},
+    {name: "處置前收盤", width: "100px", formatter: c => fmt2(c)},
+    {name: "出關量(張)", width: "104px", formatter: c => fmtInt(c)},
+    {name: "出關量/處置前", width: "120px", formatter: c => fmt2(c)},
+    {name: "出關收盤", width: "92px", formatter: c => fmt2(c)},
+    {name: "出關漲跌幅%", width: "118px", formatter: pctCell},
+    {name: "較處置前變化%", width: "126px", formatter: pctCell},
+    {name: "強度", width: "120px", formatter: starCell},
+    {name: "期間漲跌幅%", width: "118px", formatter: pctCell},
+    {name: "最大單日漲%", width: "118px", formatter: pctCell},
+    {name: "最大單日跌%", width: "118px", formatter: pctCell},
+    {name: "訊號說明", width: "300px"},
+    {name: "特殊標記", width: "180px"},
+    {name: "備註", width: "180px"},
+  ];
+  const rows = rs.map(r => [
+    String(r["代號"] ?? ""), r["股票名稱"] ?? "", r["市場"] ?? "", r["出關類型"] ?? "",
+    num(r["處置天數"]), num(r["處置前收盤"]), num(r["出關量(張)"]), num(r["出關量/處置前"]),
+    num(r["出關收盤"]), num(r["出關漲跌幅%"]), num(r["較處置前價格變化%"]), r["訊號強度"] ?? "",
+    num(r["期間漲跌幅%"]), num(r["最大單日漲%"]), num(r["最大單日跌%"]),
+    r["訊號說明"] ?? "", r["特殊標記"] ?? "", r["備註"] ?? "",
+  ]);
+  gridInto(box, cols, rows, {limit: 20});
+}
+
+/* ---------- 處置股清單 ---------- */
+async function renderDisposed() {
+  const box = $("#dispGrid");
+  box.innerHTML = `<div class="loading">載入中…</div>`;
+  let m;
+  try { m = await loadData(`${curDate}/market`); }
+  catch (e) { box.innerHTML = `<div class="loading">本日無資料</div>`; return; }
+  const rs = m.disposed || [];
+  if (!rs.length) { box.innerHTML = `<div class="loading">本日無處置股清單資料</div>`; return; }
+  const cols = [
+    {name: "代號", width: "90px"},
+    {name: "名稱", width: "140px"},
+    {name: "市場", width: "90px"},
+    {name: "處置起日", width: "130px"},
+    {name: "處置迄日", width: "130px"},
+    {name: "處置原因", width: "200px"},
+  ];
+  const rows = rs.map(r => [
+    String(r["代號"] ?? ""), r["股票名稱"] ?? "", r["市場"] ?? "",
+    r["處置起日"] ?? "", r["處置迄日"] ?? "", r["處置原因"] ?? "",
+  ]);
+  gridInto(box, cols, rows);
 }
 
 /* ---------- 勝率回測 ---------- */

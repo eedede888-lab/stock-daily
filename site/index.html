@@ -63,6 +63,9 @@
   <h1>每日個股資訊</h1>
   <div class="tabs">
     <div class="tab active" data-view="market">大盤放量訊號</div>
+    <div class="tab" data-view="continuation">量能延續追蹤</div>
+    <div class="tab" data-view="release">出關股追蹤</div>
+    <div class="tab" data-view="disposed">處置股清單</div>
     <div class="tab" data-view="winrate">勝率回測</div>
     <div class="tab" data-view="stock">個股分析</div>
   </div>
@@ -78,6 +81,19 @@
     <div id="marketCards" class="cards"></div>
     <div id="marketGrid"></div>
   </section>
+  <section id="view-continuation" class="view">
+    <h2>量能延續追蹤</h2>
+    <div id="contCards" class="cards"></div>
+    <div id="contGrid"></div>
+  </section>
+  <section id="view-release" class="view">
+    <h2>出關股追蹤</h2>
+    <div id="relGrid"></div>
+  </section>
+  <section id="view-disposed" class="view">
+    <h2>處置股清單</h2>
+    <div id="dispGrid"></div>
+  </section>
   <section id="view-winrate" class="view">
     <h2>放量訊號勝率回測</h2>
     <div class="chartbox"><canvas id="wrChart" height="110"></canvas></div>
@@ -89,6 +105,6 @@
     <div id="stockBody"><div class="loading">請選擇上方個股</div></div>
   </section>
 </main>
-<script src="app.js?v=20260603c"></script>
+<script src="app.js?v=20260603d"></script>
 </body>
 </html>
