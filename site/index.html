@@ -41,6 +41,12 @@
   table.simple td:first-child,table.simple th:first-child{text-align:left}
   .up{color:var(--up)}.down{color:var(--down)}.star{color:var(--star);letter-spacing:1px}
   .gridjs-wrapper,.gridjs-table{font-size:13px}
+  /* 表頭欄名維持單行、不截斷成 …（搭配 app.js 設定的欄寬，名稱才放得下）；
+     需用 !important 蓋過 Grid.js 主題預設的 overflow:hidden;text-overflow:ellipsis */
+  .gridjs-th-content{white-space:nowrap!important;overflow:visible!important;text-overflow:clip!important}
+  .gridjs-th{vertical-align:middle}
+  /* 長文字的資料格（例如訊號說明）允許換行；不用 word-break，避免把數字/代號拆開 */
+  .gridjs-td{white-space:normal}
   .muted{color:var(--muted)}
   .stocklist{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
   .stockchip{background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:6px 14px;cursor:pointer}
@@ -83,6 +89,6 @@
   </section>
 </main>
 <div id="lightbox"><img src="" alt=""></div>
-<script src="app.js"></script>
+<script src="app.js?v=20260603"></script>
 </body>
 </html>

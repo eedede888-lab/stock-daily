@@ -72,18 +72,18 @@ async function renderMarket() {
   ].map(c => `<div class="card"><div class="k">${c[0]}</div><div class="v">${c[1]}</div></div>`).join("");
 
   const cols = [
-    {name: "代號", width: "70px"},
-    {name: "名稱", width: "90px"},
-    {name: "市場", width: "70px"},
-    {name: "類型", width: "80px"},
-    {name: "強度", width: "75px", formatter: c => gridjs.html(`<span class="star">${c || ""}</span>`)},
-    {name: "當日量(張)", formatter: c => fmtInt(c)},
-    {name: "漲跌幅%", formatter: c => { const v = num(c); return gridjs.html(`<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${fmt2(v)}%</span>`); }},
-    {name: "收盤", formatter: c => fmt2(c)},
-    {name: "量價關係", width: "110px"},
-    {name: "×MA5", formatter: c => fmt1(c)},
-    {name: "×MA20", formatter: c => fmt1(c)},
-    {name: "訊號說明"},
+    {name: "代號", width: "78px"},
+    {name: "名稱", width: "96px"},
+    {name: "市場", width: "82px"},
+    {name: "類型", width: "82px"},
+    {name: "強度", width: "84px", formatter: c => gridjs.html(`<span class="star">${c || ""}</span>`)},
+    {name: "當日量(張)", width: "110px", formatter: c => fmtInt(c)},
+    {name: "漲跌幅%", width: "100px", formatter: c => { const v = num(c); return gridjs.html(`<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${fmt2(v)}%</span>`); }},
+    {name: "收盤", width: "84px", formatter: c => fmt2(c)},
+    {name: "量價關係", width: "124px"},
+    {name: "×MA5", width: "86px", formatter: c => fmt1(c)},
+    {name: "×MA20", width: "92px", formatter: c => fmt1(c)},
+    {name: "訊號說明", width: "260px"},
   ];
   const rows = sig.map(r => [
     String(r["代號"] ?? ""), r["股票名稱"] ?? "", r["市場"] ?? "", r["訊號類型"] ?? "",
