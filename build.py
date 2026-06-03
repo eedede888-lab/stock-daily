@@ -94,6 +94,35 @@ def build_name_map(market_file):
     wb.close(); return name_map
 
 
+# 市場別 → Yahoo 股市代號後綴（上市 TWSE→TW，上櫃 TPEX→TWO）。
+def yahoo_suffix(market):
+    m = str(market or "").strip().upper()
+    if m in ("TPEX", "OTC", "上櫃", "櫃買"):
+        return "TWO"
+    return "TW"  # 預設視為上市
+
+
+def build_market_map(market_file):
+    """代號 → Yahoo 後綴（TW / TWO），掃描各小分頁的「市場」欄。"""
+    mkt_map = {}
+    if not market_file:
+        return mkt_map
+    sheets = ["今日放量訊號", "量能延續追蹤", "出關股追蹤", "處置股清單"]
+    wb = openpyxl.load_workbook(market_file, data_only=True, read_only=True)
+    for sh in sheets:
+        if sh not in wb.sheetnames:
+            continue
+        rows = [list(r) for r in wb[sh].iter_rows(values_only=True)]
+        hi, header = find_header(rows, "代號")
+        if hi is None or "市場" not in header:
+            continue
+        ci, mi = header.index("代號"), header.index("市場")
+        for r in rows[hi + 1:]:
+            if r and r[ci] is not None and r[mi]:
+                mkt_map[str(r[ci]).strip()] = yahoo_suffix(r[mi])
+    wb.close(); return mkt_map
+
+
 
 
 def market_json_ok(path):
@@ -187,8 +216,20 @@ def emit_js_wrappers():
             f.write("window.__DATAREG&&window.__DATAREG(" + json.dumps(key) + "," + content + ");")
 
 
+def build_global_market_map(date_dirs):
+    """跨所有日期累積 代號→Yahoo後綴；市場別穩定，避免某天沒進放量分頁就抓不到。"""
+    g = {}
+    for ddir in date_dirs:
+        files = glob.glob(os.path.join(ddir, "*.xlsx"))
+        market, _ = classify(files)
+        if market:
+            g.update(build_market_map(market))
+    return g
+
+
 def main():
     date_dirs = sorted([d for d in glob.glob(os.path.join(DATA_DIR, "*")) if os.path.isdir(d)])
+    global_mkt = build_global_market_map(date_dirs)
     index = {"dates": []}
     for ddir in date_dirs:
         date = os.path.basename(ddir)
@@ -216,12 +257,13 @@ def main():
                 if name_map is None:
                     name_map = build_name_map(market)
                 name = name_map.get(code, "")
+            mkt = global_mkt.get(code, "TW")  # 未知市場別預設上市
             if SKIP_EXISTING and stock_json_ok(stock_json):
                 print(f"  {code} {name}: (skip)", flush=True)
             else:
                 st = process_stock(code, name, stocks[code], stock_json)
                 print(f"  {code} {name}: {st}", flush=True)
-            stock_list.append({"code": code, "name": name})
+            stock_list.append({"code": code, "name": name, "mkt": mkt})
         index["dates"].append({"date": date, "label": label, "has_market": bool(market), "stocks": stock_list})
     index["dates"].sort(key=lambda d: d["date"], reverse=True)
     os.makedirs(OUT_DIR, exist_ok=True)

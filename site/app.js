@@ -281,6 +281,14 @@ async function loadStock(code) {
   catch (e) { body.innerHTML = `<div class="loading">本日無 ${code} 資料</div>`; return; }
   let html = "";
 
+  // 技術分析(K線)圖：本站 Excel 無逐日 OHLC，改連到 Yahoo 股市技術分析頁
+  const sInfo = (dayInfo().stocks || []).find(s => s.code === code) || {};
+  const yhSuffix = sInfo.mkt === "TWO" ? "TWO" : "TW";
+  const yhUrl = `https://tw.stock.yahoo.com/quote/${code}.${yhSuffix}/technical-analysis`;
+  html += `<div class="yahoo-link"><a href="${yhUrl}" target="_blank" rel="noopener noreferrer">` +
+    `📈 在 Yahoo 股市看技術分析圖（K 線）→</a>` +
+    `<span class="yahoo-note">含日/週/月 K 線、均線與成交量，於 Yahoo 站外開啟</span></div>`;
+
   // 技術圖表：用 buy_top/sell_top/broker_detail 由 Chart.js 即時繪製（不再使用 PNG）
   if ((d.buy_top && d.buy_top.length) || (d.sell_top && d.sell_top.length)) {
     html += `<h3>技術圖表</h3><div class="broker-charts">` +
