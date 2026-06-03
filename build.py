@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """build.py — 把 data/ 下每天的 Excel 轉成靜態網站用的 JSON / PNG。"""
-import os, re, json, zipfile, glob, sys
+import os, re, json, glob, sys
 import openpyxl
 
 SKIP_EXISTING = "--force" not in sys.argv
@@ -74,23 +74,6 @@ def num(v):
         return v
 
 
-def extract_charts(charts_path, out_dir, code):
-    urls = []
-    try:
-        z = zipfile.ZipFile(charts_path)
-    except Exception:
-        return urls
-    media = sorted([n for n in z.namelist() if "/media/" in n and n.lower().endswith((".png", ".jpg", ".jpeg"))])
-    os.makedirs(out_dir, exist_ok=True)
-    for i, name in enumerate(media, 1):
-        ext = os.path.splitext(name)[1]
-        fn = f"{code}_{i}{ext}"
-        with open(os.path.join(out_dir, fn), "wb") as f:
-            f.write(z.read(name))
-        urls.append(f"charts/{fn}")
-    z.close(); return urls
-
-
 def build_name_map(market_file):
     name_map = {}
     if not market_file:
@@ -154,9 +137,9 @@ def process_market(market_file, out_path):
     return {k: len(v) for k, v in data.items()}
 
 
-def process_stock(code, name, files, charts_dir, out_path):
-    daily, analysis, charts = files.get("daily"), files.get("analysis"), files.get("charts")
-    out = {"code": code, "name": name, "buy_top": [], "sell_top": [], "price_volume": [], "broker_detail": [], "charts": []}
+def process_stock(code, name, files, out_path):
+    daily, analysis = files.get("daily"), files.get("analysis")
+    out = {"code": code, "name": name, "buy_top": [], "sell_top": [], "price_volume": [], "broker_detail": []}
     if daily:
         out["buy_top"] = [{k: num(v) for k, v in r.items()} for r in to_records(rows_of(daily, "買進前20"), "券商")]
         out["sell_top"] = [{k: num(v) for k, v in r.items()} for r in to_records(rows_of(daily, "賣出前20"), "券商")]
@@ -167,13 +150,10 @@ def process_stock(code, name, files, charts_dir, out_path):
         for r in to_records(rows_of(analysis, "券商明細"), "股價"):
             det.append({k: num(r.get(k)) for k in keep if k in r})
         out["broker_detail"] = det
-    if charts:
-        out["charts"] = extract_charts(charts, charts_dir, code)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
     return {"buy": len(out["buy_top"]), "sell": len(out["sell_top"]),
-            "pv": len(out["price_volume"]), "detail": len(out["broker_detail"]),
-            "charts": len(out["charts"])}
+            "pv": len(out["price_volume"]), "detail": len(out["broker_detail"])}
 
 
 def classify(files_in_dir):
@@ -188,9 +168,7 @@ def classify(files_in_dir):
             continue
         code = m.group(1)
         s = stocks.setdefault(code, {})
-        if "charts" in fn:
-            s["charts"] = path
-        elif "日報" in fn:
+        if "日報" in fn:
             s["daily"] = path
         elif "分析結果" in fn:
             s["analysis"] = path
@@ -241,7 +219,7 @@ def main():
             if SKIP_EXISTING and stock_json_ok(stock_json):
                 print(f"  {code} {name}: (skip)", flush=True)
             else:
-                st = process_stock(code, name, stocks[code], os.path.join(out_day, "charts"), stock_json)
+                st = process_stock(code, name, stocks[code], stock_json)
                 print(f"  {code} {name}: {st}", flush=True)
             stock_list.append({"code": code, "name": name})
         index["dates"].append({"date": date, "label": label, "has_market": bool(market), "stocks": stock_list})

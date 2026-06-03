@@ -39,9 +39,6 @@ async function init() {
     $(`#view-${curView}`).classList.add("active");
     render();
   });
-  // lightbox
-  const lb = $("#lightbox");
-  lb.onclick = () => lb.style.display = "none";
   render();
 }
 
@@ -160,13 +157,12 @@ async function loadStock(code) {
   let d;
   try { d = await loadData(`${curDate}/${code}`); }
   catch (e) { body.innerHTML = `<div class="loading">本日無 ${code} 資料</div>`; return; }
-  const base = `${DATA}/${curDate}/`;
   let html = "";
 
-  // 圖表
-  if (d.charts && d.charts.length) {
-    html += `<h3>技術圖表</h3><div class="chart-grid">` +
-      d.charts.map(u => `<img src="${base}${u}" loading="lazy" class="zoom">`).join("") + `</div>`;
+  // 技術圖表：用 buy_top/sell_top/broker_detail 由 Chart.js 即時繪製（不再使用 PNG）
+  if ((d.buy_top && d.buy_top.length) || (d.sell_top && d.sell_top.length)) {
+    html += `<h3>技術圖表</h3><div class="broker-charts">` +
+      [1, 2, 3, 4, 5, 6].map(i => `<div class="chartbox"><canvas id="bc${i}" height="150"></canvas></div>`).join("") + `</div>`;
   }
 
   // 買賣前20
@@ -194,11 +190,6 @@ async function loadStock(code) {
   }
   body.innerHTML = html;
 
-  // 圖片燈箱
-  body.querySelectorAll("img.zoom").forEach(img => img.onclick = () => {
-    const lb = $("#lightbox"); lb.querySelector("img").src = img.src; lb.style.display = "flex";
-  });
-
   // 價量圖
   if (d.price_volume && d.price_volume.length) {
     new Chart($("#pvChart"), {
@@ -209,6 +200,9 @@ async function loadStock(code) {
         scales: {x: {ticks: {color: "#8b9bb0"}, grid: {color: "#2c3a4f"}}, y: {ticks: {color: "#8b9bb0"}, grid: {color: "#2c3a4f"}}}},
     });
   }
+
+  // 技術圖表（Chart.js）
+  renderBrokerCharts(d);
 
   // 明細表
   if (d.broker_detail && d.broker_detail.length) {
@@ -222,6 +216,60 @@ async function loadStock(code) {
       language: {search: {placeholder: "搜尋券商…"}, pagination: {previous: "上一頁", next: "下一頁", showing: "顯示", to: "至", of: "共", results: "筆"}},
     }).render($("#detailGrid"));
   }
+}
+
+/* ---------- 技術圖表（Chart.js 版・POC）----------
+   6 張券商圖全部用 buy_top / sell_top / broker_detail 即時畫，不需要 PNG。 */
+let brokerCharts = [];
+function renderBrokerCharts(d) {
+  if (typeof Chart === "undefined") return;
+  brokerCharts.forEach(c => { try { c.destroy(); } catch (e) {} });
+  brokerCharts = [];
+  const C = {text: "#e6edf3", muted: "#8b9bb0", grid: "#2c3a4f", up: "#ff5d5d", down: "#39c46e",
+    upA: "rgba(255,93,93,.55)", downA: "rgba(57,196,110,.55)", line: "#e6edf3"};
+  const mk = (id, cfg) => { const el = $("#" + id); if (el) brokerCharts.push(new Chart(el, cfg)); };
+  const xAxis = {ticks: {color: C.muted, maxRotation: 90, minRotation: 55, font: {size: 10}}, grid: {color: C.grid}};
+  const dualOpts = title => ({
+    responsive: true, interaction: {mode: "index", intersect: false},
+    plugins: {legend: {labels: {color: C.text, boxWidth: 12, font: {size: 11}}}, title: {display: true, text: title, color: C.muted}},
+    scales: {x: xAxis,
+      y: {position: "left", ticks: {color: C.muted}, grid: {color: C.grid}, title: {display: true, text: "股數(張)", color: C.muted}},
+      y1: {position: "right", ticks: {color: C.muted}, grid: {drawOnChartArea: false}, title: {display: true, text: "均價", color: C.muted}}},
+  });
+  const netOpts = title => ({
+    responsive: true,
+    plugins: {legend: {display: false}, title: {display: true, text: title, color: C.muted}},
+    scales: {x: xAxis, y: {ticks: {color: C.muted}, grid: {color: C.grid}, title: {display: true, text: "買賣超(張)", color: C.muted}}},
+  });
+  const bar = (label, data, color, extra) => Object.assign({type: "bar", label, data, backgroundColor: color, yAxisID: "y", order: 2}, extra || {});
+  // 均價線：金色加粗、order 較小 → 畫在長條最上層，避免被柱子蓋住
+  const line = (label, data) => ({type: "line", label, data, borderColor: "#ffcb3d", backgroundColor: "#ffcb3d",
+    borderWidth: 2.5, yAxisID: "y1", tension: 0, pointRadius: 2, pointBackgroundColor: "#ffcb3d", order: 1});
+  const bt = d.buy_top || [], st = d.sell_top || [];
+
+  if (bt.length) mk("bc1", {data: {labels: bt.map(r => r["券商"]),
+    datasets: [bar("買進股數(張)", bt.map(r => num(r["buy_total_qty"])), C.up), line("均價", bt.map(r => num(r["buy_avg_price"])))]},
+    options: dualOpts("買進股數前20名與均價")});
+  if (st.length) mk("bc2", {data: {labels: st.map(r => r["券商"]),
+    datasets: [bar("賣出股數(張)", st.map(r => num(r["sell_total_qty"])), C.down), line("均價", st.map(r => num(r["sell_avg_price"])))]},
+    options: dualOpts("賣出股數前20名與均價")});
+  if (bt.length) mk("bc3", {data: {labels: bt.map(r => r["券商"]),
+    datasets: [bar("買進股數(張)", bt.map(r => num(r["buy_total_qty"])), C.upA), bar("賣出股數(張)", bt.map(r => num(r["sell_total_qty"])), C.downA), line("均價", bt.map(r => num(r["buy_avg_price"])))]},
+    options: dualOpts("買進前20名：買量 vs 賣量")});
+  if (st.length) mk("bc4", {data: {labels: st.map(r => r["券商"]),
+    datasets: [bar("賣出股數(張)", st.map(r => num(r["sell_total_qty"])), C.downA), bar("買進股數(張)", st.map(r => num(r["buy_total_qty"])), C.upA), line("均價", st.map(r => num(r["sell_avg_price"])))]},
+    options: dualOpts("賣出前20名：賣量 vs 買量")});
+
+  // 買超 / 賣超：用 broker_detail 依券商加總淨買（股）→ 張，再取前/後 20
+  const net = {};
+  (d.broker_detail || []).forEach(r => { const b = r["券商"] || ""; net[b] = (net[b] || 0) + (num(r["買進股數"]) - num(r["賣出股數"])); });
+  const arr = Object.entries(net).map(([b, v]) => [b.replace(/^[0-9A-Za-z]{3,4}/, "").trim() || b, v / 1000]);
+  const buyTop = [...arr].sort((a, b) => b[1] - a[1]).slice(0, 20);
+  const sellTop = [...arr].sort((a, b) => a[1] - b[1]).slice(0, 20);
+  if (buyTop.length) mk("bc5", {type: "bar", data: {labels: buyTop.map(x => x[0]),
+    datasets: [{label: "買超(張)", data: buyTop.map(x => x[1]), backgroundColor: C.up}]}, options: netOpts("買超前20名")});
+  if (sellTop.length) mk("bc6", {type: "bar", data: {labels: sellTop.map(x => x[0]),
+    datasets: [{label: "賣超(張)", data: sellTop.map(x => x[1]), backgroundColor: C.down}]}, options: netOpts("賣超前20名")});
 }
 
 init().catch(e => { document.querySelector("main").innerHTML = `<div class="loading">載入失敗：${e.message}<br>請確認 data 資料夾與 index.html 在一起</div>`; });

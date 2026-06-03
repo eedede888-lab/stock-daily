@@ -46,7 +46,7 @@ Two-stage pipeline: **Excel → (build.py) → site/data/*.js → (static front 
   - `台股放量訊號*.xlsx` → market file (sheets: 今日放量訊號, 量能延續追蹤, 出關股追蹤, 處置股清單, 勝率回測) → `site/data/YYYYMMDD/market.json`
   - `{code}*日報*.xlsx` → per-stock broker buy/sell top-20 (買進前20, 賣出前20)
   - `{code}*分析結果*.xlsx` → per-stock price/volume + broker detail (買賣價量與家數, 券商明細, ~12k rows)
-  - `{code}*charts*.xlsx` → 6 embedded PNG charts, extracted by unzipping the xlsx → `charts/{code}_N.png`
+  - `{code}*charts*.xlsx` files are **ignored** — the 6 technical charts are now drawn live by Chart.js from the broker buy/sell/detail data, so no PNGs are extracted or stored.
 - Per-stock output merged into `site/data/YYYYMMDD/{code}.json`.
 - Generates `site/data/index.json` — the date list + which stocks each date has; the front end builds all menus from this.
 - New stocks/dates need **no code changes** — they are auto-detected. Stock display names come from `stock_names.json` (code→name overrides), falling back to names in the market file.
@@ -59,7 +59,7 @@ Two-stage pipeline: **Excel → (build.py) → site/data/*.js → (static front 
 
 ### Front end (site/)
 - `index.html` — three tab views: 大盤放量訊號 (market signals), 勝率回測 (win-rate backtest), 個股分析 (per-stock). A date `<select>` switches the active day across all views.
-- `app.js` — vanilla JS. `cache`/`pending` registry feeds the `__DATAREG` loader. Renderers: `renderMarket` (Grid.js table), `renderWinrate` (Chart.js bar + tables), `renderStock`/`loadStock` (charts lightbox, broker tables, price/volume Chart.js, detail Grid.js).
+- `app.js` — vanilla JS. `cache`/`pending` registry feeds the `__DATAREG` loader. Renderers: `renderMarket` (Grid.js table), `renderWinrate` (Chart.js bar + tables), `renderStock`/`loadStock` (price/volume Chart.js, detail Grid.js), `renderBrokerCharts` (the 6 technical charts as live Chart.js bar+line plots built from `buy_top`/`sell_top`/`broker_detail`). When `app.js` changes, bump the `?v=` cache-buster on its `<script>` tag in `index.html`.
 - Third-party libs (Grid.js, Chart.js) load from CDN via `<script>` in `index.html`.
 
 ### Deployment

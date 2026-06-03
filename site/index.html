@@ -33,6 +33,9 @@
   .chartbox{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:16px}
   .chart-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
   .chart-grid img{width:100%;border-radius:8px;background:#fff;cursor:zoom-in}
+  .broker-charts{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:14px}
+  .broker-charts .chartbox{margin-bottom:0}
+  @media(max-width:520px){.broker-charts{grid-template-columns:1fr}}
   .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   @media(max-width:860px){.two-col{grid-template-columns:1fr}}
   table.simple{width:100%;border-collapse:collapse;background:var(--panel);border-radius:10px;overflow:hidden}
@@ -52,8 +55,6 @@
   .stockchip{background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:6px 14px;cursor:pointer}
   .stockchip:hover{border-color:var(--accent)}
   .stockchip.active{background:var(--accent);color:#06121f;font-weight:700}
-  #lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100;align-items:center;justify-content:center;cursor:zoom-out}
-  #lightbox img{max-width:94%;max-height:94%;background:#fff;border-radius:8px}
   .loading{color:var(--muted);padding:30px;text-align:center}
 </style>
 </head>
@@ -88,7 +89,6 @@
     <div id="stockBody"><div class="loading">請選擇上方個股</div></div>
   </section>
 </main>
-<div id="lightbox"><img src="" alt=""></div>
-<script src="app.js?v=20260603"></script>
+<script src="app.js?v=20260603c"></script>
 </body>
 </html>
