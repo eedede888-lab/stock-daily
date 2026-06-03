@@ -7,7 +7,7 @@
 🔗 **線上網站**：https://stock-daily-s6v.pages.dev/ （需透過 Cloudflare Access 登入）
 
 <p align="left">
-  <img src="stock-daily-qrcode.png" width="160" alt="網站 QR Code">
+  <img src="stock-daily-qrcode-cloudflare.png" width="160" alt="網站 QR Code">
 </p>
 
 ---
