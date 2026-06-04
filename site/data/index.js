@@ -3,7 +3,7 @@ window.__DATAREG&&window.__DATAREG("index",{
     {
       "date": "20260604",
       "label": "2026-06-04",
-      "has_market": false,
+      "has_market": true,
       "stocks": [
         {
           "code": "2344",
