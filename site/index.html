@@ -83,6 +83,7 @@
     <div class="tab" data-view="disposed">處置股清單</div>
     <div class="tab" data-view="winrate">勝率回測</div>
     <div class="tab" data-view="stock">個股分析</div>
+    <div class="tab" data-view="weekly">週報分析</div>
     <div class="tab" data-view="help">使用說明</div>
   </div>
   <div class="spacer"></div>
@@ -119,6 +120,15 @@
     <h2>個股分析</h2>
     <div id="stockList" class="stocklist"></div>
     <div id="stockBody"><div class="loading">請選擇上方個股</div></div>
+  </section>
+  <section id="view-weekly" class="view">
+    <h2>週報分析</h2>
+    <div class="ctrl" style="margin-bottom:14px">
+      <label for="weekSel">週期</label>
+      <select id="weekSel"></select>
+    </div>
+    <div id="weeklyStockList" class="stocklist"></div>
+    <div id="weeklyBody"><div class="loading">請選擇上方個股</div></div>
   </section>
   <section id="view-help" class="view">
     <h2>使用說明</h2>
@@ -173,6 +183,6 @@
     </div>
   </section>
 </main>
-<script src="app.js?v=20260605b"></script>
+<script src="app.js?v=20260604w"></script>
 </body>
 </html>

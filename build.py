@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""build.py — 把 data/ 下每天的 Excel 轉成靜態網站用的 JSON / PNG。"""
+"""build.py — 把 data/ 下每天/每週的 Excel 轉成靜態網站用的 JSON。"""
 import os, re, json, glob, sys
 import openpyxl
+from datetime import datetime
 
 SKIP_EXISTING = "--force" not in sys.argv
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(ROOT, "data")
+WEEKLY_DIR = os.path.join(DATA_DIR, "weekly")   # data/weekly/YYYYMMDD-YYYYMMDD/
 OUT_DIR = os.path.join(ROOT, "site", "data")
 
 def load_name_overrides():
@@ -186,6 +188,7 @@ def process_stock(code, name, files, out_path):
 
 
 def classify(files_in_dir):
+    """日報資料夾用：分類 market / daily / analysis，忽略 charts。"""
     market = None
     stocks = {}
     for path in files_in_dir:
@@ -196,6 +199,8 @@ def classify(files_in_dir):
         if not m:
             continue
         code = m.group(1)
+        if "charts" in fn.lower():   # 忽略 charts.xlsx（已無用途）
+            continue
         s = stocks.setdefault(code, {})
         if "日報" in fn:
             s["daily"] = path
@@ -203,6 +208,123 @@ def classify(files_in_dir):
             s["analysis"] = path
     return market, stocks
 
+
+def classify_weekly(files_in_dir):
+    """週報資料夾用：分類 weekly（週報）/ volume_avg（大量與均價）。"""
+    stocks = {}
+    for path in files_in_dir:
+        fn = os.path.basename(path)
+        m = re.match(r"^(\d{4})", fn)
+        if not m:
+            continue
+        code = m.group(1)
+        if "charts" in fn.lower():
+            continue
+        s = stocks.setdefault(code, {})
+        if "週報" in fn:
+            s["weekly"] = path
+        elif "大量與均價" in fn:
+            s["volume_avg"] = path
+    return stocks
+
+
+
+
+def process_weekly(code, name, files, out_path):
+    """讀取週報的買進前20/賣出前20，結構與 process_stock 相同。"""
+    weekly = files.get("weekly")
+    out = {"code": code, "name": name, "buy_top": [], "sell_top": []}
+    if weekly:
+        out["buy_top"] = [{k: num(v) for k, v in r.items()}
+                          for r in to_records(rows_of(weekly, "買進前20"), "券商")]
+        out["sell_top"] = [{k: num(v) for k, v in r.items()}
+                          for r in to_records(rows_of(weekly, "賣出前20"), "券商")]
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+    return {"buy": len(out["buy_top"]), "sell": len(out["sell_top"])}
+
+
+def process_volume_avg(code, name, files, out_path):
+    """解析「大量與均價」Excel，輸出每日摘要 + 前10明細。
+
+    工作表版面（工作表1）：
+      Row 3  : 大欄標題（大量 / 前10買量 / 前10買進均價 / 大量 / 前10賣量…）
+      Row 4  : 細欄標題（股價 / 買進股數 / 賣出股數 / 買進家數 / 賣出家數 / 最高買進 / 最高賣出 / 收盤價）
+      Row 6~ : 每日摘要（日期, 大量股價, 買進股數, 賣出股數, 買進家數, 賣出家數,
+                        最高買進股數, 最高賣出股數, 收盤價,
+                        前10買量, 前10買進均價, None,
+                        大量(同前), 前10賣量, 前10賣出均價）
+      空行後
+      Row 14 : 各日期欄位（col 0,4,8,12,16 為 datetime）
+      Row 15 : 買/價/賣/價（每日4欄重複）
+      Row 16+: 前10券商明細（每列20欄，每5欄一天）
+      Row 27 : 各日前10買量/賣量小計
+      Row 28 : 各日前10均價
+    """
+    va_file = files.get("volume_avg")
+    out = {"code": code, "name": name, "daily_summary": [], "top10_detail": []}
+    if not va_file:
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+        return {"days": 0}
+
+    rows = [list(r) for r in
+            openpyxl.load_workbook(va_file, data_only=True, read_only=True)["工作表1"]
+            .iter_rows(values_only=True)]
+
+    # --- 每日摘要（row index 6~10，遇 None 日期停止）---
+    summary_cols = ["date", "price", "buy_qty", "sell_qty",
+                    "buy_cnt", "sell_cnt", "max_buy_qty", "max_sell_qty", "close",
+                    "top10_buy_qty", "top10_buy_avg", None,
+                    None, "top10_sell_qty", "top10_sell_avg"]
+    daily = []
+    for r in rows[6:]:
+        if r[0] is None:
+            break
+        rec = {}
+        for i, col in enumerate(summary_cols):
+            if col is None or i >= len(r):
+                continue
+            v = r[i]
+            if col == "date":
+                rec[col] = v.strftime("%Y-%m-%d") if hasattr(v, "strftime") else str(v)
+            else:
+                rec[col] = num(v)
+        daily.append(rec)
+    out["daily_summary"] = daily
+
+    # --- 找前10明細區塊（日期列，row 14 = index 14）---
+    # 每天佔4欄（買量, 買均價, 賣量, 賣均價），5天共20欄
+    date_row = rows[14]
+    dates_order = []
+    for i in range(0, 20, 4):
+        v = date_row[i]
+        if v is not None:
+            d = v.strftime("%Y-%m-%d") if hasattr(v, "strftime") else str(v)
+            dates_order.append((d, i))
+
+    detail = {d: [] for d, _ in dates_order}
+    for r in rows[16:]:
+        if all(c is None for c in r):
+            break
+        for d, base in dates_order:
+            if len(r) <= base + 3:
+                continue
+            buy_qty, buy_avg, sell_qty, sell_avg = r[base], r[base+1], r[base+2], r[base+3]
+            if buy_qty is None and sell_qty is None:
+                continue
+            detail[d].append({
+                "buy_qty":  num(buy_qty),
+                "buy_avg":  num(buy_avg),
+                "sell_qty": num(sell_qty),
+                "sell_avg": num(sell_avg),
+            })
+
+    out["top10_detail"] = [{"date": d, "brokers": detail[d]} for d, _ in dates_order]
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+    return {"days": len(daily)}
 
 
 def emit_js_wrappers():
@@ -227,54 +349,23 @@ def build_global_market_map(date_dirs):
     return g
 
 
-def load_existing_index():
-    """讀回既有 index（優先 index.json，其次解析 index.js）→ {date: entry}。
-    用於合併：原始 data/ 沒有、但 site/data/ 仍有資料的日期不會被洗掉。"""
-    by_date = {}
-    ij = os.path.join(OUT_DIR, "index.json")
-    raw = None
-    if os.path.exists(ij):
-        try:
-            with open(ij, encoding="utf-8") as f:
-                raw = json.load(f)
-        except Exception:
-            raw = None
-    if raw is None:
-        # 退而求其次：從 index.js 的 __DATAREG 包裝中抽出 JSON
-        ijs = os.path.join(OUT_DIR, "index.js")
-        if os.path.exists(ijs):
-            try:
-                with open(ijs, encoding="utf-8") as f:
-                    t = f.read()
-                raw = json.loads(t[t.index("{"):t.rindex("}") + 1])
-            except Exception:
-                raw = None
-    if raw:
-        for d in raw.get("dates", []):
-            if d.get("date"):
-                by_date[d["date"]] = d
-    return by_date
-
-
-def normalize_markets(by_date):
-    """市場別穩定：任一天標到 TWO（上櫃）即全部視為 TWO，避免局部重建漏抓。"""
-    g = {}
-    for entry in by_date.values():
-        for s in entry.get("stocks", []):
-            if s.get("mkt") == "TWO":
-                g[s["code"]] = "TWO"
-            g.setdefault(s["code"], s.get("mkt") or "TW")
-    for entry in by_date.values():
-        for s in entry.get("stocks", []):
-            s["mkt"] = g.get(s["code"], "TW")
+def weekly_json_ok(path):
+    if not os.path.exists(path):
+        return False
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+        return bool(d.get("name"))
+    except Exception:
+        return False
 
 
 def main():
-    date_dirs = sorted([d for d in glob.glob(os.path.join(DATA_DIR, "*")) if os.path.isdir(d)])
+    # ── 日報 ──────────────────────────────────────────────────────────────
+    date_dirs = sorted([d for d in glob.glob(os.path.join(DATA_DIR, "*"))
+                        if os.path.isdir(d) and os.path.basename(d) != "weekly"])
     global_mkt = build_global_market_map(date_dirs)
-    # 先載入既有 index：原始 data/ 缺、但 site/data/ 仍在的日期要保留（防止局部重建洗掉舊日期）
-    merged = load_existing_index()
-    built = {}
+    index = {"dates": [], "weekly_dates": []}
     for ddir in date_dirs:
         date = os.path.basename(ddir)
         if not re.fullmatch(r"\d{8}", date):
@@ -295,37 +386,70 @@ def main():
         stock_list = []
         for code in sorted(stocks):
             stock_json = os.path.join(out_day, f"{code}.json")
-            # 名稱優先用 stock_names.json，其次放量訊號檔，最後留空
             name = NAME_OVERRIDES.get(code)
             if not name:
                 if name_map is None:
                     name_map = build_name_map(market)
                 name = name_map.get(code, "")
-            mkt = global_mkt.get(code, "TW")  # 未知市場別預設上市
+            mkt = global_mkt.get(code, "TW")
             if SKIP_EXISTING and stock_json_ok(stock_json):
                 print(f"  {code} {name}: (skip)", flush=True)
             else:
                 st = process_stock(code, name, stocks[code], stock_json)
                 print(f"  {code} {name}: {st}", flush=True)
             stock_list.append({"code": code, "name": name, "mkt": mkt})
-        built[date] = {"date": date, "label": label, "has_market": bool(market), "stocks": stock_list}
+        index["dates"].append({"date": date, "label": label, "has_market": bool(market), "stocks": stock_list})
+    index["dates"].sort(key=lambda d: d["date"], reverse=True)
 
-    # 合併：本次從原始 data/ 建好的日期為準（覆蓋既有）；其餘既有日期若 site/data/ 仍有資料夾就保留。
-    merged.update(built)
-    kept = []
-    for date in list(merged):
-        if date in built or os.path.isdir(os.path.join(OUT_DIR, date)):
-            kept.append(date)
-        else:
-            print(f"  (drop {date}: site/data/{date} 不存在)", flush=True)
-            del merged[date]
-    normalize_markets(merged)
-    index = {"dates": sorted(merged.values(), key=lambda d: d["date"], reverse=True)}
+    # ── 週報 ──────────────────────────────────────────────────────────────
+    if os.path.isdir(WEEKLY_DIR):
+        week_dirs = sorted([d for d in glob.glob(os.path.join(WEEKLY_DIR, "*"))
+                            if os.path.isdir(d)])
+        for wdir in week_dirs:
+            wkey = os.path.basename(wdir)          # e.g. 20260522-0528
+            # 接受 YYYYMMDD-MMDD 或 YYYYMMDD-YYYYMMDD 格式
+            if not re.match(r"\d{8}-\d{4,8}$", wkey):
+                continue
+            parts = wkey.split("-")
+            start = parts[0]
+            end_raw = parts[1]
+            end = (start[:4] + end_raw) if len(end_raw) == 4 else end_raw
+            label = f"{start[:4]}-{start[4:6]}-{start[6:]} ~ {end[:4]}-{end[4:6]}-{end[6:]}"
+            out_week = os.path.join(OUT_DIR, "weekly", wkey)
+            os.makedirs(out_week, exist_ok=True)
+            files = glob.glob(os.path.join(wdir, "*.xlsx"))
+            stocks = classify_weekly(files)
+            print(f"\n=== 週報 {wkey} ===", flush=True)
+            stock_list = []
+            for code in sorted(stocks):
+                name = NAME_OVERRIDES.get(code, "")
+                # 週報主檔
+                w_json = os.path.join(out_week, f"{code}.json")
+                if SKIP_EXISTING and weekly_json_ok(w_json):
+                    print(f"  {code} {name}: (skip)", flush=True)
+                else:
+                    st = process_weekly(code, name, stocks[code], w_json)
+                    print(f"  {code} {name} 週報: {st}", flush=True)
+                # 大量與均價（獨立檔案）
+                va_json = os.path.join(out_week, f"{code}_vol.json")
+                if SKIP_EXISTING and weekly_json_ok(va_json):
+                    print(f"  {code} {name} vol: (skip)", flush=True)
+                else:
+                    vt = process_volume_avg(code, name, stocks[code], va_json)
+                    print(f"  {code} {name} vol: {vt}", flush=True)
+                mkt = global_mkt.get(code, "TW")
+                stock_list.append({"code": code, "name": name, "mkt": mkt})
+            index["weekly_dates"].append({
+                "wkey": wkey, "label": label,
+                "start": start, "end": end,
+                "stocks": stock_list,
+            })
+        index["weekly_dates"].sort(key=lambda d: d["start"], reverse=True)
+
     os.makedirs(OUT_DIR, exist_ok=True)
     with open(os.path.join(OUT_DIR, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f, ensure_ascii=False, indent=2)
-    built_n = len(built)
-    print(f"\nindex.json: {len(index['dates'])} days (本次重建 {built_n} 天，合併保留 {len(index['dates']) - built_n} 天) -> {OUT_DIR}", flush=True)
+    print(f"\nindex.json: {len(index['dates'])} days, {len(index['weekly_dates'])} weeks -> {OUT_DIR}", flush=True)
     emit_js_wrappers()
     print("emitted .js wrappers", flush=True)
 

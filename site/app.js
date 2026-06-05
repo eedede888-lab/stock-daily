@@ -2,6 +2,7 @@
 const DATA = "data";
 const cache = {}, pending = {};
 let INDEX = null, curDate = null, curView = "market", curStock = null, wrChart = null;
+let curWeek = null, curWeeklyStock = null;
 
 const $ = s => document.querySelector(s);
 
@@ -48,6 +49,16 @@ async function init() {
     $(`#view-${curView}`).classList.add("active");
     render();
   });
+  // 週報下拉選單
+  const weekSel = $("#weekSel");
+  if (INDEX.weekly_dates && INDEX.weekly_dates.length) {
+    weekSel.innerHTML = INDEX.weekly_dates.map(w =>
+      `<option value="${w.wkey}">${w.label}</option>`).join("");
+    curWeek = INDEX.weekly_dates[0].wkey;
+    weekSel.onchange = () => { curWeek = weekSel.value; curWeeklyStock = null; if (curView === "weekly") renderWeekly(); };
+  } else {
+    weekSel.innerHTML = '<option value="">（尚無週報資料）</option>';
+  }
   render();
 }
 
@@ -58,6 +69,7 @@ function render() {
   else if (curView === "disposed") renderDisposed();
   else if (curView === "winrate") renderWinrate();
   else if (curView === "stock") renderStock();
+  else if (curView === "weekly") renderWeekly();
   // help：靜態內容，已在 index.html，無需渲染
 }
 
@@ -409,6 +421,184 @@ function renderBrokerCharts(d) {
     datasets: [{label: "買超(張)", data: buyTop.map(x => x[1]), backgroundColor: C.up}]}, options: netOpts("買超前20名")});
   if (sellTop.length) mk("bc6", {type: "bar", data: {labels: sellTop.map(x => x[0]),
     datasets: [{label: "賣超(張)", data: sellTop.map(x => x[1]), backgroundColor: C.down}]}, options: netOpts("賣超前20名")});
+}
+
+/* ========== 週報分析 ========================================= */
+function weekInfo() {
+  return (INDEX.weekly_dates || []).find(w => w.wkey === curWeek);
+}
+
+function renderWeekly() {
+  const wi = weekInfo();
+  const list = $("#weeklyStockList");
+  if (!wi || !wi.stocks || !wi.stocks.length) {
+    list.innerHTML = "";
+    $("#weeklyBody").innerHTML = '<div class="loading">本週無資料</div>';
+    return;
+  }
+  list.innerHTML = wi.stocks.map(s =>
+    `<div class="stockchip${s.code === curWeeklyStock ? " active" : ""}" data-code="${s.code}">${s.code} ${s.name || ""}</div>`
+  ).join("");
+  list.querySelectorAll(".stockchip").forEach(c => c.onclick = () => {
+    curWeeklyStock = c.dataset.code; renderWeekly();
+  });
+  if (!curWeeklyStock) {
+    $("#weeklyBody").innerHTML = '<div class="loading">請選擇上方個股</div>';
+    return;
+  }
+  loadWeeklyStock(curWeeklyStock);
+}
+
+async function loadWeeklyStock(code) {
+  const body = $("#weeklyBody");
+  body.innerHTML = `<div class="loading">載入 ${code} …</div>`;
+  const wi = weekInfo();
+  const sInfo = (wi.stocks || []).find(s => s.code === code) || {};
+  const yhSuffix = sInfo.mkt === "TWO" ? "TWO" : "TW";
+  const yhUrl = `https://tw.stock.yahoo.com/quote/${code}.${yhSuffix}/technical-analysis`;
+
+  // 同時載入週報主檔 + 大量與均價
+  let dw, dv;
+  try { dw = await loadData(`weekly/${curWeek}/${code}`); }
+  catch (e) { body.innerHTML = `<div class="loading">無法載入 ${code} 週報資料</div>`; return; }
+  try { dv = await loadData(`weekly/${curWeek}/${code}_vol`); } catch (e) { dv = null; }
+
+  let html = "";
+
+  // Yahoo 連結
+  html += `<div class="yahoo-link"><a href="${yhUrl}" target="_blank" rel="noopener noreferrer">` +
+    `📈 在 Yahoo 股市看技術分析圖（K 線）→</a>` +
+    `<span class="yahoo-note">週期間 K 線請在 Yahoo 站外切換</span></div>`;
+
+  // 技術圖表（與日報相同，用 buy_top/sell_top 即時繪製）
+  if ((dw.buy_top && dw.buy_top.length) || (dw.sell_top && dw.sell_top.length)) {
+    html += `<h3>技術圖表（週）</h3><div class="broker-charts">` +
+      [1,2,3,4,5,6].map(i => `<div class="chartbox"><canvas id="wbc${i}" height="150"></canvas></div>`).join("") +
+      `</div>`;
+  }
+
+  // 買賣前20表格
+  const topTable = (recs, title) => {
+    if (!recs || !recs.length) return "";
+    let t = `<table class="simple"><thead><tr><th>券商</th><th>買量(張)</th><th>買均價</th><th>賣量(張)</th><th>賣均價</th><th>買賣超(張)</th></tr></thead><tbody>`;
+    recs.forEach(r => {
+      const diff = num(r["buy_sell_diff"]);
+      t += `<tr><td>${r["券商"] ?? ""}</td><td>${fmtInt(r["buy_total_qty"])}</td><td>${fmt2(r["buy_avg_price"])}</td>` +
+        `<td>${fmtInt(r["sell_total_qty"])}</td><td>${fmt2(r["sell_avg_price"])}</td>` +
+        `<td class="${diff >= 0 ? "up" : "down"}">${diff >= 0 ? "+" : ""}${fmtInt(diff)}</td></tr>`;
+    });
+    return `<h3>${title}</h3>` + t + `</tbody></table>`;
+  };
+  html += `<div class="two-col"><div>${topTable(dw.buy_top, "買超前 20 大券商（週）")}</div>` +
+    `<div>${topTable(dw.sell_top, "賣超前 20 大券商（週）")}</div></div>`;
+
+  // 大量與均價：每日摘要表
+  if (dv && dv.daily_summary && dv.daily_summary.length) {
+    html += `<h3>每日大量摘要</h3>
+    <div style="overflow-x:auto">
+    <table class="simple"><thead><tr>
+      <th>日期</th><th>大量股價</th><th>買進股數</th><th>賣出股數</th>
+      <th>買進家數</th><th>賣出家數</th><th>最高買進</th><th>最高賣出</th><th>收盤價</th>
+      <th>前10買量</th><th>前10買均價</th><th>前10賣量</th><th>前10賣均價</th>
+    </tr></thead><tbody>`;
+    dv.daily_summary.forEach(r => {
+      html += `<tr>
+        <td>${r.date ?? ""}</td><td>${fmt2(r.price)}</td>
+        <td>${fmtInt(r.buy_qty)}</td><td>${fmtInt(r.sell_qty)}</td>
+        <td>${fmtInt(r.buy_cnt)}</td><td>${fmtInt(r.sell_cnt)}</td>
+        <td>${fmtInt(r.max_buy_qty)}</td><td>${fmtInt(r.max_sell_qty)}</td>
+        <td>${fmt2(r.close)}</td>
+        <td>${fmtInt(r.top10_buy_qty)}</td><td>${fmt2(r.top10_buy_avg)}</td>
+        <td>${fmtInt(r.top10_sell_qty)}</td><td>${fmt2(r.top10_sell_avg)}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+
+    // 每日前10明細圖表（一天一個 canvas）
+    if (dv.top10_detail && dv.top10_detail.length) {
+      html += `<h3>每日前10券商買賣明細</h3><div class="broker-charts">` +
+        dv.top10_detail.map(day =>
+          `<div class="chartbox"><canvas id="vol_${day.date}" height="160"></canvas></div>`
+        ).join("") + `</div>`;
+    }
+  }
+
+  body.innerHTML = html;
+
+  // 繪製週報技術圖表（同 renderBrokerCharts，改用 wbc 前綴）
+  renderBrokerChartsWeekly(dw);
+
+  // 繪製大量與均價每日前10圖表
+  if (dv && dv.top10_detail) {
+    dv.top10_detail.forEach(day => {
+      const el = document.getElementById(`vol_${day.date}`);
+      if (!el || !day.brokers.length) return;
+      const labels = day.brokers.map((_, i) => `#${i + 1}`);
+      new Chart(el, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {label: "買量(張)", data: day.brokers.map(b => num(b.buy_qty)), backgroundColor: "rgba(255,93,93,.7)", yAxisID: "y"},
+            {label: "賣量(張)", data: day.brokers.map(b => num(b.sell_qty)), backgroundColor: "rgba(57,196,110,.7)", yAxisID: "y"},
+            {label: "買均價", data: day.brokers.map(b => num(b.buy_avg)), type: "line", borderColor: "#ffcb3d", backgroundColor: "#ffcb3d", borderWidth: 2, yAxisID: "y1", tension: 0, pointRadius: 2, order: 1},
+          ]
+        },
+        options: {
+          responsive: true,
+          interaction: {mode: "index", intersect: false},
+          plugins: {
+            legend: {labels: {color: "#e6edf3", boxWidth: 12, font: {size: 11}}},
+            title: {display: true, text: `${day.date} 前10券商買賣`, color: "#8b9bb0"},
+          },
+          scales: {
+            x: {ticks: {color: "#8b9bb0"}, grid: {color: "#2c3a4f"}},
+            y: {position: "left", ticks: {color: "#8b9bb0"}, grid: {color: "#2c3a4f"}, title: {display: true, text: "股數(張)", color: "#8b9bb0"}},
+            y1: {position: "right", ticks: {color: "#8b9bb0"}, grid: {drawOnChartArea: false}, title: {display: true, text: "均價", color: "#8b9bb0"}},
+          },
+        },
+      });
+    });
+  }
+}
+
+/* 週報技術圖表（同 renderBrokerCharts，canvas id 用 wbc 前綴）*/
+let weeklyBrokerCharts = [];
+function renderBrokerChartsWeekly(d) {
+  if (typeof Chart === "undefined") return;
+  weeklyBrokerCharts.forEach(c => { try { c.destroy(); } catch (e) {} });
+  weeklyBrokerCharts = [];
+  const C = {text:"#e6edf3",muted:"#8b9bb0",grid:"#2c3a4f",up:"#ff5d5d",down:"#39c46e",
+    upA:"rgba(255,93,93,.55)",downA:"rgba(57,196,110,.55)"};
+  const mk = (id, cfg) => { const el = document.getElementById(id); if (el) weeklyBrokerCharts.push(new Chart(el, cfg)); };
+  const xAxis = {ticks:{color:C.muted,maxRotation:90,minRotation:55,font:{size:10}},grid:{color:C.grid}};
+  const dualOpts = title => ({
+    responsive:true, interaction:{mode:"index",intersect:false},
+    plugins:{legend:{labels:{color:C.text,boxWidth:12,font:{size:11}}},title:{display:true,text:title,color:C.muted}},
+    scales:{x:xAxis,
+      y:{position:"left",ticks:{color:C.muted},grid:{color:C.grid},title:{display:true,text:"股數(張)",color:C.muted}},
+      y1:{position:"right",ticks:{color:C.muted},grid:{drawOnChartArea:false},title:{display:true,text:"均價",color:C.muted}}},
+  });
+  const netOpts = title => ({
+    responsive:true,
+    plugins:{legend:{display:false},title:{display:true,text:title,color:C.muted}},
+    scales:{x:xAxis,y:{ticks:{color:C.muted},grid:{color:C.grid},title:{display:true,text:"買賣超(張)",color:C.muted}}},
+  });
+  const bar = (label, data, color, extra) => Object.assign({type:"bar",label,data,backgroundColor:color,yAxisID:"y",order:2}, extra||{});
+  const line = (label, data) => ({type:"line",label,data,borderColor:"#ffcb3d",backgroundColor:"#ffcb3d",
+    borderWidth:2.5,yAxisID:"y1",tension:0,pointRadius:2,pointBackgroundColor:"#ffcb3d",order:1});
+  const bt = d.buy_top || [], st = d.sell_top || [];
+  if (bt.length) mk("wbc1",{data:{labels:bt.map(r=>r["券商"]),datasets:[bar("買進股數(張)",bt.map(r=>num(r["buy_total_qty"])),C.up),line("均價",bt.map(r=>num(r["buy_avg_price"])))]},options:dualOpts("買進股數前20名與均價（週）")});
+  if (st.length) mk("wbc2",{data:{labels:st.map(r=>r["券商"]),datasets:[bar("賣出股數(張)",st.map(r=>num(r["sell_total_qty"])),C.down),line("均價",st.map(r=>num(r["sell_avg_price"])))]},options:dualOpts("賣出股數前20名與均價（週）")});
+  if (bt.length) mk("wbc3",{data:{labels:bt.map(r=>r["券商"]),datasets:[bar("買進股數(張)",bt.map(r=>num(r["buy_total_qty"])),C.upA),bar("賣出股數(張)",bt.map(r=>num(r["sell_total_qty"])),C.downA),line("均價",bt.map(r=>num(r["buy_avg_price"])))]},options:dualOpts("買進前20名：買量 vs 賣量（週）")});
+  if (st.length) mk("wbc4",{data:{labels:st.map(r=>r["券商"]),datasets:[bar("賣出股數(張)",st.map(r=>num(r["sell_total_qty"])),C.downA),bar("買進股數(張)",st.map(r=>num(r["buy_total_qty"])),C.upA),line("均價",st.map(r=>num(r["sell_avg_price"])))]},options:dualOpts("賣出前20名：賣量 vs 買量（週）")});
+  const net = {};
+  (d.broker_detail||[]).forEach(r=>{const b=r["券商"]||"";net[b]=(net[b]||0)+(num(r["買進股數"])-num(r["賣出股數"]));});
+  const arr = Object.entries(net).map(([b,v])=>[b.replace(/^[0-9A-Za-z]{3,4}/,"").trim()||b,v/1000]);
+  const buyTop=[...arr].sort((a,b)=>b[1]-a[1]).slice(0,20);
+  const sellTop=[...arr].sort((a,b)=>a[1]-b[1]).slice(0,20);
+  if (buyTop.length) mk("wbc5",{type:"bar",data:{labels:buyTop.map(x=>x[0]),datasets:[{label:"買超(張)",data:buyTop.map(x=>x[1]),backgroundColor:C.up}]},options:netOpts("買超前20名（週）")});
+  if (sellTop.length) mk("wbc6",{type:"bar",data:{labels:sellTop.map(x=>x[0]),datasets:[{label:"賣超(張)",data:sellTop.map(x=>x[1]),backgroundColor:C.down}]},options:netOpts("賣超前20名（週）")});
 }
 
 init().catch(e => { document.querySelector("main").innerHTML = `<div class="loading">載入失敗：${e.message}<br>請確認 data 資料夾與 index.html 在一起</div>`; });
