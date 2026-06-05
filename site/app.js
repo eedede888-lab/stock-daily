@@ -15,7 +15,10 @@ function loadData(key) {
   return new Promise((resolve, reject) => {
     (pending[key] = pending[key] || []).push(resolve);
     const sc = document.createElement("script");
-    sc.src = `${DATA}/${key}.js`;
+    // 日期清單 index 會隨每次更新而變，須避開瀏覽器/CDN 快取（max-age=600）才能即時反映新日期；
+    // 各單日資料是固定的可正常快取。file:// 開啟時不加查詢字串（本機檔案帶 ?query 可能載不到）。
+    const bust = (key === "index" && typeof location !== "undefined" && location.protocol !== "file:") ? `?t=${Date.now()}` : "";
+    sc.src = `${DATA}/${key}.js${bust}`;
     sc.onerror = () => { delete pending[key]; reject(new Error("無法載入 " + key)); };
     document.head.appendChild(sc);
   });
