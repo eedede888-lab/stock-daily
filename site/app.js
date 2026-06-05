@@ -33,7 +33,13 @@ async function init() {
   const sel = $("#dateSel");
   sel.innerHTML = INDEX.dates.map(d => `<option value="${d.date}">${d.label}</option>`).join("");
   curDate = INDEX.dates[0].date;
-  sel.onchange = () => { curDate = sel.value; curStock = null; render(); };
+  sel.onchange = () => {
+    curDate = sel.value;
+    // 切換日期時保留已選個股；只有當新日期沒有這檔股票時才清空，省得每次都要重點
+    const di = INDEX.dates.find(d => d.date === curDate);
+    if (!(di && (di.stocks || []).some(s => s.code === curStock))) curStock = null;
+    render();
+  };
   document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
     document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
     t.classList.add("active");
