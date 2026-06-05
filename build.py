@@ -227,10 +227,54 @@ def build_global_market_map(date_dirs):
     return g
 
 
+def load_existing_index():
+    """讀回既有 index（優先 index.json，其次解析 index.js）→ {date: entry}。
+    用於合併：原始 data/ 沒有、但 site/data/ 仍有資料的日期不會被洗掉。"""
+    by_date = {}
+    ij = os.path.join(OUT_DIR, "index.json")
+    raw = None
+    if os.path.exists(ij):
+        try:
+            with open(ij, encoding="utf-8") as f:
+                raw = json.load(f)
+        except Exception:
+            raw = None
+    if raw is None:
+        # 退而求其次：從 index.js 的 __DATAREG 包裝中抽出 JSON
+        ijs = os.path.join(OUT_DIR, "index.js")
+        if os.path.exists(ijs):
+            try:
+                with open(ijs, encoding="utf-8") as f:
+                    t = f.read()
+                raw = json.loads(t[t.index("{"):t.rindex("}") + 1])
+            except Exception:
+                raw = None
+    if raw:
+        for d in raw.get("dates", []):
+            if d.get("date"):
+                by_date[d["date"]] = d
+    return by_date
+
+
+def normalize_markets(by_date):
+    """市場別穩定：任一天標到 TWO（上櫃）即全部視為 TWO，避免局部重建漏抓。"""
+    g = {}
+    for entry in by_date.values():
+        for s in entry.get("stocks", []):
+            if s.get("mkt") == "TWO":
+                g[s["code"]] = "TWO"
+            g.setdefault(s["code"], s.get("mkt") or "TW")
+    for entry in by_date.values():
+        for s in entry.get("stocks", []):
+            s["mkt"] = g.get(s["code"], "TW")
+
+
 def main():
     date_dirs = sorted([d for d in glob.glob(os.path.join(DATA_DIR, "*")) if os.path.isdir(d)])
     global_mkt = build_global_market_map(date_dirs)
-    index = {"dates": []}
+    # 先載入既有 index：原始 data/ 缺、但 site/data/ 仍在的日期要保留（防止局部重建洗掉舊日期）
+    merged = load_existing_index()
+    built = {}
     for ddir in date_dirs:
         date = os.path.basename(ddir)
         if not re.fullmatch(r"\d{8}", date):
@@ -264,12 +308,24 @@ def main():
                 st = process_stock(code, name, stocks[code], stock_json)
                 print(f"  {code} {name}: {st}", flush=True)
             stock_list.append({"code": code, "name": name, "mkt": mkt})
-        index["dates"].append({"date": date, "label": label, "has_market": bool(market), "stocks": stock_list})
-    index["dates"].sort(key=lambda d: d["date"], reverse=True)
+        built[date] = {"date": date, "label": label, "has_market": bool(market), "stocks": stock_list}
+
+    # 合併：本次從原始 data/ 建好的日期為準（覆蓋既有）；其餘既有日期若 site/data/ 仍有資料夾就保留。
+    merged.update(built)
+    kept = []
+    for date in list(merged):
+        if date in built or os.path.isdir(os.path.join(OUT_DIR, date)):
+            kept.append(date)
+        else:
+            print(f"  (drop {date}: site/data/{date} 不存在)", flush=True)
+            del merged[date]
+    normalize_markets(merged)
+    index = {"dates": sorted(merged.values(), key=lambda d: d["date"], reverse=True)}
     os.makedirs(OUT_DIR, exist_ok=True)
     with open(os.path.join(OUT_DIR, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f, ensure_ascii=False, indent=2)
-    print(f"\nindex.json: {len(index['dates'])} days -> {OUT_DIR}", flush=True)
+    built_n = len(built)
+    print(f"\nindex.json: {len(index['dates'])} days (本次重建 {built_n} 天，合併保留 {len(index['dates']) - built_n} 天) -> {OUT_DIR}", flush=True)
     emit_js_wrappers()
     print("emitted .js wrappers", flush=True)
 
