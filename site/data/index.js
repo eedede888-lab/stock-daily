@@ -67,9 +67,9 @@ window.__DATAREG&&window.__DATAREG("index",{
   ],
   "weekly_dates": [
     {
-      "wkey": "20262529-0604",
-      "label": "2026-25-29 ~ 2026-06-04",
-      "start": "20262529",
+      "wkey": "20260529-0604",
+      "label": "2026-05-29 ~ 2026-06-04",
+      "start": "20260529",
       "end": "20260604",
       "stocks": [
         {
