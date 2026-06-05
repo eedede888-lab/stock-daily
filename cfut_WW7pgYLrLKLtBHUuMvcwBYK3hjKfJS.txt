@@ -1,8 +1,0 @@
-cfut_WW7pgYLrLKLtBHUuMvcwBYK3hjKfJSiuMO3TuMtg060831fd
-
-curl "https://api.cloudflare.com/client/v4/user/tokens/verify" \
--H "Authorization: Bearer cfut_WW7pgYLrLKLtBHUuMvcwBYK3hjKfJSiuMO3TuMtg060831fd"
-
-cloudflare dashboard token
-
-fa79c9ff7ae3b22a04cdcdd6c4cb782e
