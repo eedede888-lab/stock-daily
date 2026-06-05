@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A daily stock-information website for Taiwan equities. A partner produces Excel files each day; `build.py` converts them into a compact static site under `site/`, which is published to Cloudflare Pages (behind Cloudflare Access login). There is no backend, database, or build framework — the front end is hand-written HTML + vanilla JS loading pre-generated data files.
+A daily stock-information website for Taiwan equities. A partner produces Excel files each day; `build.py` converts them into a compact static site under `site/`, which is published to **GitHub Pages via a GitHub Actions workflow** (push to `main` auto-deploys). There is no backend, database, or build framework — the front end is hand-written HTML + vanilla JS loading pre-generated data files.
 
-Live site: https://stock-daily-s6v.pages.dev/ (login required via Cloudflare Access) — Repo: `tongwade/stock-daily`. The old GitHub Pages site (github.io) has been **taken down** (workflow disabled, Pages unpublished) and is no longer public.
+Live site: https://tongwade.github.io/stock-daily/ — Repo: `tongwade/stock-daily`. **Pushing to `main` triggers the `Deploy site to GitHub Pages` workflow (`.github/workflows/pages.yml`), which publishes `site/`.** The earlier Cloudflare Pages + `wrangler` Direct Upload flow (and its Cloudflare Access login) has been **superseded** by this git-driven workflow — do not run `wrangler` to deploy.
 
 ## Commands
 
@@ -24,10 +24,9 @@ node site/smoke.js site
 # Local preview: just open site/index.html in a browser.
 # It works over file:// (no server needed) — see the .js-wrapper note below.
 
-# Deploy: publish site/ to Cloudflare Pages (Direct Upload; needs `wrangler login` once).
-npx wrangler pages deploy site --project-name stock-daily
-# git push is now source backup only — it does NOT auto-deploy (GitHub Pages disabled).
+# Deploy: push to main. The GitHub Actions workflow (pages.yml) publishes site/ to GitHub Pages.
 git add -A && git commit -m "..." && git push
+# Verify the deploy: gh run list --limit 1   (look for "Deploy site to GitHub Pages" = success)
 ```
 
 Python deps: `openpyxl` (Excel parsing). The smoke test needs Node.
@@ -37,11 +36,11 @@ Python deps: `openpyxl` (Excel parsing). The smoke test needs Node.
 1. Drop the day's Excel files into a new `data/YYYYMMDD/` folder.
 2. Run `python build.py` (it only processes dates not yet built).
 3. Run `node site/smoke.js site` to confirm no render errors.
-4. `npx wrangler pages deploy site --project-name stock-daily` — publishes to Cloudflare Pages. (Optionally `git push` to back up source; that no longer deploys anything.)
+4. `git add -A && git commit -m "..." && git push` — pushing to `main` triggers the GitHub Actions workflow that publishes to GitHub Pages. Confirm with `gh run list --limit 1` (workflow `Deploy site to GitHub Pages` → success).
 
 ## Architecture
 
-Two-stage pipeline: **Excel → (build.py) → site/data/*.js → (static front end) → Cloudflare Pages**.
+Two-stage pipeline: **Excel → (build.py) → site/data/*.js → (static front end) → GitHub Pages (via GitHub Actions)**.
 
 ### build.py (Excel → data files)
 - Scans `data/YYYYMMDD/` folders. Files are classified by name in `classify()`:
@@ -50,7 +49,9 @@ Two-stage pipeline: **Excel → (build.py) → site/data/*.js → (static front 
   - `{code}*分析結果*.xlsx` → per-stock price/volume + broker detail (買賣價量與家數, 券商明細, ~12k rows)
   - `{code}*charts*.xlsx` files are **ignored** — the 6 technical charts are now drawn live by Chart.js from the broker buy/sell/detail data, so no PNGs are extracted or stored.
 - Per-stock output merged into `site/data/YYYYMMDD/{code}.json`.
-- Generates `site/data/index.json` — the date list + which stocks each date has; the front end builds all menus from this.
+- Generates `site/data/index.json` — the date list + which stocks each date has (each stock entry: `code`, `name`, `mkt`); the front end builds all menus from this.
+- **Index is merged, not overwritten** (`load_existing_index()` + merge in `main()`): dates freshly built from raw `data/` win, but any existing date still present as a `site/data/YYYYMMDD/` folder is **kept** even if its raw Excel is absent. This prevents a collaborator who only has *some* days' raw Excel locally from wiping the other dates out of the menu when they rebuild. (This exact bug happened 2026-06-04.)
+- `mkt` is the Yahoo market suffix per stock — `TW` (上市/TWSE) or `TWO` (上櫃/TPEX), used by the front end to build the Yahoo technical-analysis link. `build_market_map`/`build_global_market_map` read it from the market file's 市場 column; `normalize_markets()` then unifies across all days (any day tagged `TWO` wins) since a stock's market is stable — so a partial rebuild can't mislabel it.
 - New stocks/dates need **no code changes** — they are auto-detected. Stock display names come from `stock_names.json` (code→name overrides), falling back to names in the market file.
 - `SKIP_EXISTING` (default true; `--force` disables) skips dates whose output JSON already parses correctly.
 
@@ -58,6 +59,7 @@ Two-stage pipeline: **Excel → (build.py) → site/data/*.js → (static front 
 `emit_js_wrappers()` writes a `.js` copy of every `.json` that calls `window.__DATAREG(key, data)`. The front end (`app.js` `loadData()`) loads data by injecting `<script src="data/KEY.js">` tags, **not** fetch — so the site works when opened directly via `file://` with no web server. Consequences:
 - The deployed/used data files are the **`.js`** ones. The `.json` files are intermediate products and are git-ignored by `site/.gitignore` (`data/**/*.json`). Do not expect `data/index.json` to exist on the live site — use `data/index.js`.
 - Any new data file produced by hand must follow the same `window.__DATAREG(...)` wrapper format.
+- **`index.js` cache-busting**: `loadData()` appends `?t=<timestamp>` **only** for the `index` key and **only** over http(s) (not `file://`). The date list changes on every update but is loaded via a plain `<script>` tag, and GitHub Pages serves it with `Cache-Control: max-age=600` — without the buster, new dates wouldn't show for up to 10 min (this caused a "missing dates" report on 2026-06-04). Per-date data files are immutable, so they are intentionally left cacheable.
 
 ### Front end (site/)
 - `index.html` — three tab views: 大盤放量訊號 (market signals), 勝率回測 (win-rate backtest), 個股分析 (per-stock). A date `<select>` switches the active day across all views.
@@ -65,9 +67,8 @@ Two-stage pipeline: **Excel → (build.py) → site/data/*.js → (static front 
 - Third-party libs (Grid.js, Chart.js) load from CDN via `<script>` in `index.html`.
 
 ### Deployment
-- **Active path: Cloudflare Pages (Direct Upload).** Publish with `npx wrangler pages deploy site --project-name stock-daily` (project `stock-daily`, domain `stock-daily-s6v.pages.dev`). The project is **not** git-connected, so pushing to GitHub does NOT update the live site — you must run the wrangler deploy. Auth: `wrangler login` once (OAuth token stored locally).
-- **Access login**: the production domain is protected by a Cloudflare Access (Zero Trust) self-hosted application; only allow-listed emails can view it. Gotcha: the Pages "Restrict previews" toggle only protects *preview* URLs — the production domain is protected by a separate Access app whose hostname must be set to `stock-daily-s6v.pages.dev`. An unauthenticated `curl` to the site should return **302** (redirect to the Access login); a 200 means protection isn't applied.
-- **Legacy / disabled**: `.github/workflows/pages.yml` (GitHub Actions → GitHub Pages) is now **disabled** and the github.io site is unpublished. `site/deploy.bat` is an even older branch-based approach, also unused. Neither is part of the current flow.
+- **Active path: GitHub Pages via GitHub Actions.** `.github/workflows/pages.yml` (`Deploy site to GitHub Pages`) runs on every push to `main` (and `workflow_dispatch`); it uploads `site/` as a Pages artifact and deploys it to https://tongwade.github.io/stock-daily/. **To publish: just `git push` to `main`.** Confirm the run with `gh run list --limit 1` (status `success`); inspect the live data with e.g. `curl -s https://tongwade.github.io/stock-daily/data/index.js`.
+- **Superseded: Cloudflare Pages + `wrangler`.** The site was previously published to Cloudflare Pages (project `stock-daily`, `stock-daily-s6v.pages.dev`) by Direct Upload (`npx wrangler pages deploy site --project-name stock-daily`), behind a Cloudflare Access login. That flow has been replaced by the GitHub Actions workflow above — **do not run `wrangler` to deploy.** (Older still: `site/deploy.bat`, a branch-based approach, also unused.)
 
 ## Gotchas
 

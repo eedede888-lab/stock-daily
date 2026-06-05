@@ -1,13 +1,13 @@
 # 每日個股資訊網站
 
-每日更新的台股個股資訊靜態網站。合作夥伴每天產出 Excel 檔，`build.py` 會把它們轉成精簡的靜態網站資料，發佈到 Cloudflare Pages（需登入）。
+每日更新的台股個股資訊靜態網站。合作夥伴每天產出 Excel 檔，`build.py` 會把它們轉成精簡的靜態網站資料，push 到 `main` 後由 GitHub Actions 自動發佈到 GitHub Pages。
 
 **沒有後端、沒有資料庫、沒有前端框架** —— 前端是手寫的 HTML + 原生 JavaScript，直接讀取事先產生好的資料檔。
 
-🔗 **線上網站**：https://stock-daily-s6v.pages.dev/ （需透過 Cloudflare Access 登入）
+🔗 **線上網站**：https://tongwade.github.io/stock-daily/
 
 <p align="left">
-  <img src="stock-daily-qrcode-cloudflare.png" width="160" alt="網站 QR Code">
+  <img src="stock-daily-qrcode.png" width="160" alt="網站 QR Code">
 </p>
 
 ---
