@@ -15,5 +15,6 @@ site/smoke.out
 *.log
 .DS_Store
 Thumbs.db
-tw_volume.db.patchright_profile/ 
+tw_volume.db
+.patchright_profile/ 
 out/ 
