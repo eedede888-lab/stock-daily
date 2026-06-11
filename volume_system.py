@@ -1,5 +1,5 @@
 """
-台股成交量分析系統 v3.0
+台股成交量分析系統 v5.4
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 使用方式（手動執行，建議每2~3日更新一次）：
 
@@ -17,26 +17,23 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-import os, sys, time, sqlite3, logging, requests
+import sys, time, sqlite3, logging, requests
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Windows 主控台預設 cp950，無法輸出 emoji（如 📊）會讓 print 崩潰；統一改用 UTF-8。
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
+# ── 強制終端機以 UTF-8 輸出，避免在 Windows cp950 環境下列印 emoji 當機 ──
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 全域設定
 # ══════════════════════════════════════════════════════════════════════════════
 DB_PATH = "tw_volume.db"
-# 輸出目錄：可用環境變數 VOLUME_OUT_DIR 覆寫；預設為本檔所在資料夾下的 out/，
-# 以便在不同電腦上都能執行（原本寫死的桌面路徑只在特定機器上存在）。
-OUT_DIR = Path(os.environ.get("VOLUME_OUT_DIR") or (Path(__file__).resolve().parent / "out"))
+OUT_DIR = Path(r"C:\Users\羞羞的家\Desktop")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
@@ -367,8 +364,9 @@ def fetch_twse_day(date_str: str) -> pd.DataFrame:
         if "漲跌(+/-)" in fields and "漲跌價差" in fields:
             def calc_chg(row):
                 try:
-                    sign  = 1.0 if str(row["漲跌(+/-)"]).strip() == "+" else (
-                            -1.0 if str(row["漲跌(+/-)"]).strip() == "-" else 0.0)
+                    sign_raw = re.sub(r'<[^>]+>', '', str(row["漲跌(+/-)"])).strip()
+                    sign  = 1.0 if sign_raw == "+" else (
+                            -1.0 if sign_raw == "-" else 0.0)
                     diff  = _parse_num(row["漲跌價差"])
                     close = _parse_num(row["收盤價"])
                     prev  = close - sign * diff
@@ -582,23 +580,27 @@ def compute_signal_tracking(con: sqlite3.Connection, target_date: str):
     3. 判斷是否達延伸條件，晉升下一 stage
     """
     # ── Step 0：強制結案過期追蹤（冷門股/資料缺失導致假追蹤中）────────────────
-    # 各 stage 的資料填滿最多需要 max_days 個交易日
-    # 超過 max_days * 1.5 個曆法天後仍是 tracking，代表資料缺失 → 強制結案
-    target_dt = datetime.strptime(target_date, "%Y-%m-%d")
+    # 修正：改用「實際交易日數」作為過期判斷依據，避免長假（如農曆春節）
+    # 誤殺正常追蹤中的 Stage（改用 daily_volume 中最近 N 個交易日的最早日期作 cutoff）
     STALE_THRESHOLDS = {
-        "A": int(STAGE_DAYS["A"] * 1.5) + 2,   # 5日 → 9天
-        "B": int(STAGE_DAYS["B"] * 1.5) + 2,   # 10日 → 17天
-        "C": int(STAGE_DAYS["C"] * 1.5) + 2,   # 15日 → 24天
-        "D": int(STAGE_DAYS["D"] * 1.5) + 2,   # 15日 → 24天
+        "A": int(STAGE_DAYS["A"] * 2) + 1,   # 5日 → 取前11個交易日的最早日
+        "B": int(STAGE_DAYS["B"] * 2) + 1,   # 10日 → 取前21個交易日
+        "C": int(STAGE_DAYS["C"] * 2) + 1,   # 15日 → 取前31個交易日
+        "D": int(STAGE_DAYS["D"] * 2) + 1,   # 15日 → 取前31個交易日
     }
-    for stage, threshold_days in STALE_THRESHOLDS.items():
-        cutoff = (target_dt - timedelta(days=threshold_days)).strftime("%Y-%m-%d")
-        con.execute("""
-            UPDATE signal_tracking
-            SET status = 'closed'
-            WHERE stage = ? AND status = 'tracking'
-              AND stage_start_date <= ?
-        """, (stage, cutoff))
+    for stage, n_trade_days in STALE_THRESHOLDS.items():
+        # 取 target_date 之前（含）第 n_trade_days 個實際交易日
+        cutoff_row = con.execute("""
+            SELECT date FROM daily_volume
+            WHERE date <= ? ORDER BY date DESC LIMIT 1 OFFSET ?
+        """, (target_date, n_trade_days - 1)).fetchone()
+        if cutoff_row:
+            con.execute("""
+                UPDATE signal_tracking
+                SET status = 'closed'
+                WHERE stage = ? AND status = 'tracking'
+                  AND stage_start_date <= ?
+            """, (stage, cutoff_row[0]))
     con.commit()
 
     # ── Step 1：今日新訊號 → 建立 Stage A ────────────────────────────────────
@@ -674,6 +676,17 @@ def compute_signal_tracking(con: sqlite3.Connection, target_date: str):
          sig_close, star, market) in tracking:
 
         if stage not in NEXT:
+            # Stage D 無下一階段，但需要主動結案（否則永遠卡在 tracking）
+            max_days_d = STAGE_DAYS["D"]
+            days_count_d = con.execute("""
+                SELECT COUNT(*) FROM signal_tracking_days
+                WHERE stock_id=? AND signal_date=? AND stage='D'
+            """, (sid, sig_date)).fetchone()[0]
+            if days_count_d >= max_days_d:
+                con.execute("""
+                    UPDATE signal_tracking SET status='closed'
+                    WHERE stock_id=? AND signal_date=? AND stage='D'
+                """, (sid, sig_date))
             continue   # Stage D 無下一階段
 
         max_days = STAGE_DAYS[stage]
@@ -1199,10 +1212,11 @@ def detect_signals(
     # 情境標籤彙整（供 Excel 顯示）
     def _ctx_label(row):
         flags = []
-        if row["market_flag"] == "強漲日":
-            flags.append("🌊強漲日")
-        elif row["market_flag"] == "強跌日":
-            flags.append("🌧️強跌日")
+        mflag = row["market_flag"]
+        if mflag:
+            emoji = next((e for _, _, n, e in MARKET_LEVELS if n == mflag), "")
+            if mflag not in ("中性", ""):
+                flags.append(f"{emoji}{mflag}")
         if row["repeat_flag"]:
             flags.append(row["repeat_flag"])
         return " ".join(flags)
@@ -1420,6 +1434,8 @@ def detect_continuation(
     prev_date = prev_date_row[0]
 
     # 取前日所有訊號（NORMAL 或 CONTINUE 皆可作為延續基準）
+    # 修正：CONTINUE 的 signal_close 改用原始訊號日收盤（signals.close_price），
+    # 而非前日延續的收盤（continue_close），確保 cumulative_change 反映相較訊號日的真實累計漲幅
     prev_signals = pd.read_sql("""
         SELECT s.stock_id, s.date, s.market, s.signal_type, s.signal_star,
                s.volume AS signal_volume, s.close_price AS signal_close
@@ -1428,8 +1444,11 @@ def detect_continuation(
         UNION
         SELECT c.stock_id, c.signal_date AS date, c.market,
                c.continue_type AS signal_type, c.signal_star,
-               c.continue_volume AS signal_volume, c.continue_close AS signal_close
+               c.continue_volume AS signal_volume,
+               COALESCE(orig.close_price, c.signal_close) AS signal_close
         FROM continuation_tracking c
+        LEFT JOIN signals orig
+            ON orig.stock_id = c.stock_id AND orig.date = c.signal_date
         WHERE c.continue_date = ?
     """, con, params=(prev_date, prev_date))
 
@@ -1530,8 +1549,27 @@ def detect_continuation(
 # ══════════════════════════════════════════════════════════════════════════════
 
 # 大盤旗標門檻設定
-MARKET_STRONG_UP   =  1.8   # 大盤均漲 ≥ +1.8% → 強漲日（訊號參考價值降低）
-MARKET_STRONG_DOWN = -1.5   # 大盤均跌 ≤ -1.5% → 強跌日
+# 大盤市況十一段分級門檻（TWSE全市場個股簡單平均漲跌幅，[lo, hi) 邊界規則）
+MARKET_LEVELS = [
+    (-999,  -2.5, '極跌', '🔻'),   # ≤ -2.5%
+    (-2.5,  -1.8, '強跌', '🌧️'),  # -2.5% ~ -1.8%
+    (-1.8,  -1.0, '大跌', '📉'),   # -1.8% ~ -1.0%
+    (-1.0,  -0.3, '小跌', '🔽'),   # -1.0% ~ -0.3%
+    (-0.3,  -0.1, '偏跌', '↘️'),  # -0.3% ~ -0.1%
+    (-0.1,   0.1, '中性', '➡️'),  # -0.1% ~ +0.1%
+    ( 0.1,   0.3, '偏漲', '↗️'),  # +0.1% ~ +0.3%
+    ( 0.3,   1.0, '小漲', '🔼'),   # +0.3% ~ +1.0%
+    ( 1.0,   1.8, '大漲', '📈'),   # +1.0% ~ +1.8%
+    ( 1.8,   2.5, '強漲', '🌊'),   # +1.8% ~ +2.5%
+    ( 2.5,   999, '極漲', '🚀'),   # ≥ +2.5%
+]
+
+def _classify_market(chg: float) -> tuple:
+    """回傳 (級別名稱, emoji)"""
+    for lo, hi, name, emoji in MARKET_LEVELS:
+        if lo <= chg < hi:
+            return name, emoji
+    return '極漲', '🚀'  # fallback
 REPEAT_SIGNAL_DAYS =  3     # N 個交易日內同標的重複訊號門檻（用實際交易日，非曆法天）
 
 
@@ -1564,16 +1602,13 @@ def compute_market_stats(con: sqlite3.Connection, date_str: str) -> None:
             stats[f"{prefix}_flat_cnt"] = sum(1 for c in chg_list if c == 0)
             stats[f"{prefix}_total"]    = len(chg_list)
 
-    # 大盤旗標（以 TWSE 為主）
+    # 大盤旗標（以 TWSE 為主，十一段分級）
     twse_chg = stats.get("twse_avg_chg")
     if twse_chg is None:
         stats["market_flag"] = ""
-    elif twse_chg >= MARKET_STRONG_UP:
-        stats["market_flag"] = "強漲日"
-    elif twse_chg <= MARKET_STRONG_DOWN:
-        stats["market_flag"] = "強跌日"
     else:
-        stats["market_flag"] = "平盤日"
+        level_name, _ = _classify_market(twse_chg)
+        stats["market_flag"] = level_name
 
     con.execute("""
         INSERT OR REPLACE INTO market_stats
@@ -2297,7 +2332,7 @@ def export_excel(
         base_hdrs += ["距訊號累計%"]
         if stage != "A":
             base_hdrs += ["距段起點累計%"]
-        base_hdrs += ["狀態"]
+        base_hdrs += ["最高漲幅%", "距高回落%", "狀態"]
 
         all_hdrs = base_hdrs + day_hdrs
         base_w = [9, 12, 7, 8, 12, 10]
@@ -2306,7 +2341,7 @@ def export_excel(
         base_w += [12]
         if stage != "A":
             base_w += [12]
-        base_w += [10]
+        base_w += [11, 11, 10]
         day_w = [11, 9, 9] * max_days
         all_w = base_w + day_w
 
@@ -2346,6 +2381,23 @@ def export_excel(
                 if d in day_data and day_data[d][2] is not None:
                     last_close = day_data[d][2]
                     break
+
+            # ── 方向三：高點分析 ──────────────────────────────────────────────
+            peak_close = None
+            for d in range(1, max_days + 1):
+                if d in day_data and day_data[d][2] is not None:
+                    if peak_close is None or day_data[d][2] > peak_close:
+                        peak_close = day_data[d][2]
+
+            # 最高漲幅% = (高點收盤 - 訊號日收盤) / 訊號日收盤
+            max_gain = _chg_pct(sig_close, peak_close) if (
+                peak_close is not None and sig_close and sig_close > 0
+            ) else None
+
+            # 距高回落% = (最新收盤 - 高點收盤) / 高點收盤（負值 = 從高點回落）
+            drawdown = _chg_pct(peak_close, last_close) if (
+                peak_close is not None and last_close is not None and peak_close > 0
+            ) else None
 
             chg_signal = _chg_pct(sig_close, last_close)
             chg_stage  = _chg_pct(stg_close, last_close) if stage != "A" else None
@@ -2390,7 +2442,11 @@ def export_excel(
             ]
             if stage != "A":
                 base_vals += [(f"{chg_stage:+.2f}%" if chg_stage is not None else "-")]
-            base_vals += [status_str]
+            base_vals += [
+                (f"{max_gain:+.2f}%" if max_gain is not None else "-"),
+                (f"{drawdown:+.2f}%" if drawdown is not None else "-"),
+                status_str,
+            ]
 
             day_vals = []
             for d in range(1, max_days + 1):
@@ -2426,12 +2482,20 @@ def export_excel(
                     else:
                         cell.fill = _fill(COL["alt"]) if alt else _fill(COL["white"])
                         cell.font = _f()
-                elif ci < len(base_vals) and ci >= len(base_vals) - (2 if stage != "A" else 1):
-                    # 累計% 欄著色（距訊號累計% / 距段起點累計%）
+                elif ci < len(base_vals) and ci >= len(base_vals) - (4 if stage != "A" else 3):
+                    # 累計%、最高漲幅%、距高回落% 三欄著色
+                    # 距高回落% 在 len(base_vals)-2，值為負代表回落，應反向著色
+                    is_drawdown = (ci == len(base_vals) - 2)
                     try:
                         raw_v = float(str(val).replace("%", "").replace("+", ""))
-                        cell.fill = _chg_fill(raw_v)
-                        cell.font = _chg_font(raw_v)
+                        if is_drawdown:
+                            # 距高回落%：負值（已回落）→ 反向著色，值越小（跌越多）顏色越深綠警示
+                            # 正值（創新高）→ 紅色系（少見但屬強勢）
+                            cell.fill = _chg_fill(-raw_v)  # 反轉符號使回落顯示為警示色
+                            cell.font = _chg_font(-raw_v)
+                        else:
+                            cell.fill = _chg_fill(raw_v)
+                            cell.font = _chg_font(raw_v)
                     except Exception:
                         cell.fill = _fill(COL["alt"]) if alt else _fill(COL["white"])
                         cell.font = _f()
@@ -2566,11 +2630,14 @@ def export_excel(
         ("  ※ CONTINUE 判斷基準：v5.3 起改用今日量 ÷ MA20（原為 ÷ 前日訊號量），接手率大幅提升",   False,10,"FFF9E7","7D3C98"),
         ("",                                               False, 10, "FFFFFF", "000000"),
         ("【情境標記說明（v5.3 新增）】",                   True,  11, "EAF2FF", "1F3864"),
-        ("  🌊 強漲日  → 當日市場等權平均漲幅 ≥ 1.8%，全面普漲，個股獨立性降低，訊號參考價值下降",  False,10,"FFF3CD","856404"),
-        ("  🌧️ 強跌日  → 當日市場等權平均跌幅 ≤ -1.5%，系統性下跌，恐慌性放量居多",               False,10,"D6EAF8","1A5276"),
+        ("  大盤市況（TWSE全市場個股簡單平均漲跌幅，[lo,hi) 邊界規則）",                          False,10,"F2F2F2","444444"),
+        ("  🚀 極漲   ≥ +2.5%　　🌊 強漲  +1.8%~+2.5%　　📈 大漲  +1.0%~+1.8%",               False,10,"FFF3CD","856404"),
+        ("  🔼 小漲  +0.3%~+1.0%　↗️ 偏漲  +0.1%~+0.3%　➡️ 中性  -0.1%~+0.1%",              False,10,"F0FFF0","276327"),
+        ("  ↘️ 偏跌  -0.3%~-0.1%　🔽 小跌  -1.0%~-0.3%　📉 大跌  -1.8%~-1.0%",              False,10,"FFF0F0","922B21"),
+        ("  🌧️ 強跌  -2.5%~-1.8%　🔻 極跌   ≤ -2.5%",                                       False,10,"D6EAF8","1A5276"),
         ("  ⚠️ 重複    → 近 3 個交易日內已有訊號，且今日量 < MA20（量縮後重現），參考價值較低",     False,10,"FFCCBC","BF360C"),
         ("  （以上標記可複合出現，例如：🌊強漲日 ⚠️重複）",                                        False,10,"FFFFFF","888888"),
-        ("  大盤漲跌% = 該股所屬市場（TWSE/TPEX）所有股票的等權平均漲跌幅，非加權指數",             False,10,"FFFFFF","888888"),
+        ("  大盤漲跌% = TWSE 全市場個股簡單平均漲跌幅（非加權指數），中性 = -0.1%~+0.1%",             False,10,"FFFFFF","888888"),
         ("",                                               False, 10, "FFFFFF", "000000"),
         ("【量價關係說明】",                                True,  11, "EAF2FF", "1F3864"),
         ("  量增價漲 ↑↑ → 最強，主力積極買入",                                                     False,10,"FFFFFF","000000"),
@@ -2815,7 +2882,7 @@ def _append_history_log(
         s1 = (signals["signal_star"] == "★").sum()
         if "context" in signals.columns:
             repeat_cnt  = signals["context"].str.contains("重複",  na=False).sum()
-            strong_flag = signals["context"].str.contains("強漲日", na=False).sum()
+            strong_flag = signals["context"].str.contains("強漲|極漲", na=False, regex=True).sum()
 
     # ── 大盤情境 ──────────────────────────────────────────────────────────────
     mkt = get_market_context(con, target_date)

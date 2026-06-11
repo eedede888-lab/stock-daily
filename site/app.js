@@ -104,12 +104,6 @@ async function renderMarket() {
   const s3 = sig.filter(r => (r["訊號強度"] || "").length >= 3).length;
   const up5 = sig.filter(r => num(r["漲跌幅%"]) >= 5).length;
   const mchg = sig.length ? sig[0]["大盤漲跌%"] : null;
-  $("#marketCards").innerHTML = [
-    ["放量檔數", fmtInt(sig.length)],
-    ["★★★ 強烈", fmtInt(s3)],
-    ["漲幅 ≥5%", fmtInt(up5)],
-    ["大盤漲跌%", (mchg != null ? (num(mchg) >= 0 ? "+" : "") + fmt2(mchg) + "%" : "—")],
-  ].map(c => `<div class="card"><div class="k">${c[0]}</div><div class="v">${c[1]}</div></div>`).join("");
 
   const cols = [
     {name: "代號", width: "78px"},
@@ -125,21 +119,48 @@ async function renderMarket() {
     {name: "×MA20", width: "92px", formatter: c => fmt1(c)},
     {name: "訊號說明", width: "260px"},
   ];
-  const rows = sig.map(r => [
+  const allRows = sig.map(r => [
     String(r["代號"] ?? ""), r["股票名稱"] ?? "", r["市場"] ?? "", r["訊號類型"] ?? "",
     r["訊號強度"] ?? "", num(r["當日量(張)"]), num(r["漲跌幅%"]), num(r["收盤價"]),
     r["量價關係"] ?? "", num(r["較MA5倍"]), num(r["較MA20倍"]), r["訊號說明"] ?? "",
   ]);
-  // 用全新的容器節點重繪：Grid.js(Preact) 會沿用容器殘留的虛擬 DOM 樹，
-  // 直接對同一節點重複 render 會讓新搜尋框的事件接不上（切換日期後搜尋失效）。
-  const fresh = document.createElement("div");
-  fresh.id = box.id;
-  box.replaceWith(fresh);
-  new gridjs.Grid({
-    columns: cols, data: rows, search: true, sort: true,
-    pagination: {limit: 25}, fixedHeader: true,
-    language: {search: {placeholder: "搜尋代號 / 名稱…"}, pagination: {previous: "上一頁", next: "下一頁", showing: "顯示", to: "至", of: "共", results: "筆"}},
-  }).render(fresh);
+
+  // 篩選狀態
+  let marketFilter = {s3: false, up5: false};
+
+  function applyMarketGrid() {
+    let rows = allRows;
+    if (marketFilter.s3)  rows = rows.filter(r => String(r[4] || "").length >= 3);
+    if (marketFilter.up5) rows = rows.filter(r => num(r[6]) >= 5);
+    // 用全新的容器節點重繪：Grid.js(Preact) 會沿用容器殘留的虛擬 DOM 樹，
+    // 直接對同一節點重複 render 會讓新搜尋框的事件接不上（切換日期後搜尋失效）。
+    const fresh = document.createElement("div");
+    fresh.id = "marketGrid";
+    $("#marketGrid").replaceWith(fresh);
+    new gridjs.Grid({
+      columns: cols, data: rows, search: true, sort: true,
+      pagination: {limit: 25}, fixedHeader: true,
+      language: {search: {placeholder: "搜尋代號 / 名稱…"}, pagination: {previous: "上一頁", next: "下一頁", showing: "顯示", to: "至", of: "共", results: "筆"}},
+    }).render(fresh);
+    // 更新 card active 樣式
+    const isAll = !marketFilter.s3 && !marketFilter.up5;
+    $("#card-market-all").classList.toggle("card-active", isAll);
+    $("#card-market-s3").classList.toggle("card-active", marketFilter.s3);
+    $("#card-market-up5").classList.toggle("card-active", marketFilter.up5);
+  }
+
+  $("#marketCards").innerHTML = [
+    {id: "card-market-all",  label: "放量檔數",  val: fmtInt(sig.length), btn: true},
+    {id: "card-market-s3",   label: "★★★ 強烈", val: fmtInt(s3),         btn: true},
+    {id: "card-market-up5",  label: "漲幅 ≥5%",  val: fmtInt(up5),        btn: true},
+    {id: "card-market-mchg", label: "大盤漲跌%",  val: (mchg != null ? (num(mchg) >= 0 ? "+" : "") + fmt2(mchg) + "%" : "—"), btn: false},
+  ].map(c => `<div class="card${c.btn ? " card-btn" : ""}" id="${c.id}"><div class="k">${c.label}</div><div class="v">${c.val}</div></div>`).join("");
+
+  $("#card-market-all").onclick  = () => { marketFilter = {s3: false, up5: false}; applyMarketGrid(); };
+  $("#card-market-s3").onclick   = () => { marketFilter.s3  = !marketFilter.s3;   applyMarketGrid(); };
+  $("#card-market-up5").onclick  = () => { marketFilter.up5 = !marketFilter.up5;  applyMarketGrid(); };
+
+  applyMarketGrid();
 }
 
 /* ---------- 量能延續追蹤 ---------- */
@@ -152,10 +173,7 @@ async function renderContinuation() {
   const rs = m.continuation || [];
   if (!rs.length) { box.innerHTML = `<div class="loading">本日無量能延續追蹤資料</div>`; $("#contCards").innerHTML = ""; return; }
   const strong = rs.filter(r => String(r["延續類型"] || "").includes("強力")).length;
-  $("#contCards").innerHTML = [
-    ["延續檔數", fmtInt(rs.length)],
-    ["強力延續", fmtInt(strong)],
-  ].map(c => `<div class="card"><div class="k">${c[0]}</div><div class="v">${c[1]}</div></div>`).join("");
+
   const cols = [
     {name: "代號", width: "76px"},
     {name: "名稱", width: "92px"},
@@ -171,12 +189,32 @@ async function renderContinuation() {
     {name: "累計漲幅%", width: "108px", formatter: pctCell},
     {name: "原始星等", width: "92px", formatter: starCell},
   ];
-  const rows = rs.map(r => [
+  const allRows = rs.map(r => [
     String(r["代號"] ?? ""), r["股票名稱"] ?? "", r["市場"] ?? "", r["延續類型"] ?? "",
     r["放量日期"] ?? "", num(r["放量量(張)"]), num(r["放量收盤"]), num(r["次日量(張)"]),
     num(r["次日量/放量"]), num(r["次日收盤"]), num(r["次日漲跌幅%"]), num(r["累計漲幅%"]), r["原始星等"] ?? "",
   ]);
-  gridInto(box, cols, rows);
+
+  // 篩選狀態
+  let contFilter = {strong: false};
+
+  function applyContGrid() {
+    let rows = allRows;
+    if (contFilter.strong) rows = rows.filter(r => String(r[3] || "").includes("強力"));
+    gridInto($("#contGrid"), cols, rows);
+    $("#card-cont-all").classList.toggle("card-active", !contFilter.strong);
+    $("#card-cont-strong").classList.toggle("card-active", contFilter.strong);
+  }
+
+  $("#contCards").innerHTML = [
+    {id: "card-cont-all",    label: "延續檔數", val: fmtInt(rs.length)},
+    {id: "card-cont-strong", label: "強力延續", val: fmtInt(strong)},
+  ].map(c => `<div class="card card-btn" id="${c.id}"><div class="k">${c.label}</div><div class="v">${c.val}</div></div>`).join("");
+
+  $("#card-cont-all").onclick    = () => { contFilter = {strong: false}; applyContGrid(); };
+  $("#card-cont-strong").onclick = () => { contFilter.strong = !contFilter.strong; applyContGrid(); };
+
+  applyContGrid();
 }
 
 /* ---------- 出關股追蹤 ---------- */
@@ -591,7 +629,7 @@ function renderBrokerChartsWeekly(d) {
   if (bt.length) mk("wbc1",{data:{labels:bt.map(r=>r["券商"]),datasets:[bar("買進股數(張)",bt.map(r=>num(r["buy_total_qty"])),C.up),line("均價",bt.map(r=>num(r["buy_avg_price"])))]},options:dualOpts("買進股數前20名與均價（週）")});
   if (st.length) mk("wbc2",{data:{labels:st.map(r=>r["券商"]),datasets:[bar("賣出股數(張)",st.map(r=>num(r["sell_total_qty"])),C.down),line("均價",st.map(r=>num(r["sell_avg_price"])))]},options:dualOpts("賣出股數前20名與均價（週）")});
   if (bt.length) mk("wbc3",{data:{labels:bt.map(r=>r["券商"]),datasets:[bar("買進股數(張)",bt.map(r=>num(r["buy_total_qty"])),C.upA),bar("賣出股數(張)",bt.map(r=>num(r["sell_total_qty"])),C.downA),line("均價",bt.map(r=>num(r["buy_avg_price"])))]},options:dualOpts("買進前20名：買量 vs 賣量（週）")});
-  if (st.length) mk("wbc4",{data:{labels:st.map(r=>r["券商"]),datasets:[bar("賣出股數(張)",st.map(r=>num(r["sell_total_qty"])),C.downA),bar("買進股數(張)",st.map(r=>num(r["buy_total_qty"])),C.upA),line("均價",st.map(r=>num(r["sell_avg_price"])))]},options:dualOpts("賣出前20名：賣量 vs 買量（週）")});
+  if (st.length) mk("wbc4",{data:{labels:st.map(r=>r["券商"]),datasets:[bar("賣出股數(張)",st.map(r=>num(r["sell_total_qty"])),C.downA),bar("買進股數(張)",bt.map(r=>num(r["buy_total_qty"])),C.upA),line("均價",st.map(r=>num(r["sell_avg_price"])))]},options:dualOpts("賣出前20名：賣量 vs 買量（週）")});
   const net = {};
   (d.broker_detail||[]).forEach(r=>{const b=r["券商"]||"";net[b]=(net[b]||0)+(num(r["買進股數"])-num(r["賣出股數"]));});
   const arr = Object.entries(net).map(([b,v])=>[b.replace(/^[0-9A-Za-z]{3,4}/,"").trim()||b,v/1000]);
