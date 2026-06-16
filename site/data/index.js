@@ -6,6 +6,16 @@ window.__DATAREG&&window.__DATAREG("index",{
       "has_market": true,
       "stocks": [
         {
+          "code": "2317",
+          "name": "",
+          "mkt": "TW"
+        },
+        {
+          "code": "2330",
+          "name": "",
+          "mkt": "TW"
+        },
+        {
           "code": "2344",
           "name": "華邦電",
           "mkt": "TW"
