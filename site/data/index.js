@@ -7,12 +7,12 @@ window.__DATAREG&&window.__DATAREG("index",{
       "stocks": [
         {
           "code": "2317",
-          "name": "",
+          "name": "鴻海",
           "mkt": "TW"
         },
         {
           "code": "2330",
-          "name": "",
+          "name": "台積電",
           "mkt": "TW"
         },
         {
