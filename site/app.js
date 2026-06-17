@@ -39,6 +39,7 @@ async function init() {
     // 切換日期時保留已選個股；只有當新日期沒有這檔股票時才清空，省得每次都要重點
     const di = INDEX.dates.find(d => d.date === curDate);
     if (!(di && (di.stocks || []).some(s => s.code === curStock))) curStock = null;
+    contPeriod = "cont"; // 日期切換時回到預設週期（次日延續）
     render();
   };
   document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
@@ -163,58 +164,161 @@ async function renderMarket() {
   applyMarketGrid();
 }
 
-/* ---------- 量能延續追蹤 ---------- */
+/* ---------- 量能延續追蹤（整合次日/5日/10日/15日/15日再延伸）---------- */
+let contPeriod = "cont"; // cont | t5 | t10 | t15 | t15b
+
 async function renderContinuation() {
   const box = $("#contGrid");
   box.innerHTML = `<div class="loading">載入中…</div>`;
   let m;
   try { m = await loadData(`${curDate}/market`); }
   catch (e) { box.innerHTML = `<div class="loading">本日無資料</div>`; $("#contCards").innerHTML = ""; return; }
-  const rs = m.continuation || [];
-  if (!rs.length) { box.innerHTML = `<div class="loading">本日無量能延續追蹤資料</div>`; $("#contCards").innerHTML = ""; return; }
-  const strong = rs.filter(r => String(r["延續類型"] || "").includes("強力")).length;
 
-  const cols = [
-    {name: "代號", width: "76px"},
-    {name: "名稱", width: "92px"},
-    {name: "市場", width: "74px"},
-    {name: "延續類型", width: "124px"},
-    {name: "放量日期", width: "108px"},
-    {name: "放量量(張)", width: "104px", formatter: c => fmtInt(c)},
-    {name: "放量收盤", width: "92px", formatter: c => fmt2(c)},
-    {name: "次日量(張)", width: "104px", formatter: c => fmtInt(c)},
-    {name: "次日量/放量", width: "112px", formatter: c => fmt2(c)},
-    {name: "次日收盤", width: "92px", formatter: c => fmt2(c)},
-    {name: "次日漲跌幅%", width: "118px", formatter: pctCell},
-    {name: "累計漲幅%", width: "108px", formatter: pctCell},
-    {name: "原始星等", width: "92px", formatter: starCell},
+  const cont  = m.continuation || [];
+  const t5    = m.track5  || [];
+  const t10   = m.track10 || [];
+  const t15   = m.track15 || [];
+  const t15b  = m.track15b|| [];
+
+  // 統計數字
+  const contStrong = cont.filter(r => String(r["延續類型"] || "").includes("強力")).length;
+  const t5Active   = t5.filter(r => r["狀態"] === "追蹤中").length;
+  const t10Active  = t10.filter(r => r["狀態"] === "追蹤中").length;
+  const t15Active  = t15.filter(r => r["狀態"] === "追蹤中").length;
+  const t15bActive = t15b.filter(r => r["狀態"] === "追蹤中").length;
+
+  const periods = [
+    {id: "cp-cont",  key: "cont",  label: "次日延續",    sub: `強力 ${contStrong}`,  cnt: cont.length},
+    {id: "cp-t5",    key: "t5",    label: "5日追蹤",     sub: `追蹤中 ${t5Active}`,  cnt: t5.length},
+    {id: "cp-t10",   key: "t10",   label: "10日延伸",    sub: `追蹤中 ${t10Active}`, cnt: t10.length},
+    {id: "cp-t15",   key: "t15",   label: "15日延伸",    sub: `追蹤中 ${t15Active}`, cnt: t15.length},
+    {id: "cp-t15b",  key: "t15b",  label: "15日再延伸",  sub: `追蹤中 ${t15bActive}`,cnt: t15b.length},
   ];
-  const allRows = rs.map(r => [
-    String(r["代號"] ?? ""), r["股票名稱"] ?? "", r["市場"] ?? "", r["延續類型"] ?? "",
-    r["放量日期"] ?? "", num(r["放量量(張)"]), num(r["放量收盤"]), num(r["次日量(張)"]),
-    num(r["次日量/放量"]), num(r["次日收盤"]), num(r["次日漲跌幅%"]), num(r["累計漲幅%"]), r["原始星等"] ?? "",
-  ]);
 
-  // 篩選狀態
-  let contFilter = {strong: false};
+  // 渲染卡片
+  $("#contCards").innerHTML = periods.map(p =>
+    `<div class="card card-btn${contPeriod === p.key ? " card-active" : ""}" id="${p.id}" data-key="${p.key}">` +
+    `<div class="k">${p.label}</div><div class="v">${fmtInt(p.cnt)}</div>` +
+    `<div class="k" style="margin-top:2px;font-size:11px">${p.sub}</div></div>`
+  ).join("");
+  periods.forEach(p => {
+    document.getElementById(p.id).onclick = () => {
+      contPeriod = p.key;
+      renderContinuation();
+    };
+  });
 
-  function applyContGrid() {
-    let rows = allRows;
-    if (contFilter.strong) rows = rows.filter(r => String(r[3] || "").includes("強力"));
+  applyContPeriod(m);
+}
+
+function applyContPeriod(m) {
+  const cont  = m.continuation || [];
+  const t5    = m.track5  || [];
+  const t10   = m.track10 || [];
+  const t15   = m.track15 || [];
+  const t15b  = m.track15b|| [];
+
+  // 次日延續 ── 保持原有欄位
+  if (contPeriod === "cont") {
+    const strong = cont.filter(r => String(r["延續類型"] || "").includes("強力")).length;
+    if (!cont.length) { document.getElementById("contGrid").innerHTML = `<div class="loading">本日無量能延續追蹤資料</div>`; return; }
+    const cols = [
+      {name: "代號", width: "76px"},
+      {name: "名稱", width: "92px"},
+      {name: "市場", width: "74px"},
+      {name: "延續類型", width: "124px"},
+      {name: "放量日期", width: "108px"},
+      {name: "放量量(張)", width: "104px", formatter: c => fmtInt(c)},
+      {name: "放量收盤", width: "92px", formatter: c => fmt2(c)},
+      {name: "次日量(張)", width: "104px", formatter: c => fmtInt(c)},
+      {name: "次日量/放量", width: "112px", formatter: c => fmt2(c)},
+      {name: "次日收盤", width: "92px", formatter: c => fmt2(c)},
+      {name: "次日漲跌幅%", width: "118px", formatter: pctCell},
+      {name: "累計漲幅%", width: "108px", formatter: pctCell},
+      {name: "原始星等", width: "92px", formatter: starCell},
+    ];
+    const rows = cont.map(r => [
+      String(r["代號"] ?? ""), r["股票名稱"] ?? "", r["市場"] ?? "", r["延續類型"] ?? "",
+      r["放量日期"] ?? "", num(r["放量量(張)"]), num(r["放量收盤"]), num(r["次日量(張)"]),
+      num(r["次日量/放量"]), num(r["次日收盤"]), num(r["次日漲跌幅%"]), num(r["累計漲幅%"]), r["原始星等"] ?? "",
+    ]);
     gridInto($("#contGrid"), cols, rows);
-    $("#card-cont-all").classList.toggle("card-active", !contFilter.strong);
-    $("#card-cont-strong").classList.toggle("card-active", contFilter.strong);
+    return;
   }
 
-  $("#contCards").innerHTML = [
-    {id: "card-cont-all",    label: "延續檔數", val: fmtInt(rs.length)},
-    {id: "card-cont-strong", label: "強力延續", val: fmtInt(strong)},
-  ].map(c => `<div class="card card-btn" id="${c.id}"><div class="k">${c.label}</div><div class="v">${c.val}</div></div>`).join("");
+  // 5日/10日/15日/15日再延伸 ── 共用動態欄位邏輯
+  const MAP = {
+    t5:   {data: t5,   n: 5,  label: "5日追蹤"},
+    t10:  {data: t10,  n: 10, label: "10日延伸"},
+    t15:  {data: t15,  n: 15, label: "15日延伸"},
+    t15b: {data: t15b, n: 15, label: "15日再延伸"},
+  };
+  const {data: rs, n} = MAP[contPeriod];
+  if (!rs.length) { document.getElementById("contGrid").innerHTML = `<div class="loading">本日無${MAP[contPeriod].label}資料</div>`; return; }
 
-  $("#card-cont-all").onclick    = () => { contFilter = {strong: false}; applyContGrid(); };
-  $("#card-cont-strong").onclick = () => { contFilter.strong = !contFilter.strong; applyContGrid(); };
+  // 固定欄
+  const hasSeg = rs[0] && "段起始日" in rs[0]; // 10日/15日 有「段起始」欄
+  const fixedCols = [
+    {name: "代號",     width: "76px"},
+    {name: "名稱",     width: "96px"},
+    {name: "市場",     width: "74px"},
+    {name: "星等",     width: "80px", formatter: starCell},
+    {name: "訊號日",   width: "108px"},
+    {name: "訊號收盤", width: "84px", formatter: c => fmt2(c)},
+    ...(hasSeg ? [
+      {name: "段起始日",   width: "108px"},
+      {name: "段起始收盤", width: "90px", formatter: c => fmt2(c)},
+    ] : []),
+    {name: "距訊號%",  width: "90px", formatter: pctOrDash},
+    ...(hasSeg ? [{name: "距段起%", width: "84px", formatter: pctOrDash}] : []),
+    {name: "最高漲%",  width: "84px", formatter: pctOrDash},
+    {name: "距高回落%",width: "90px", formatter: pctOrDash},
+    {name: "狀態",     width: "84px", formatter: c => gridjs.html(statusBadge(c))},
+  ];
 
-  applyContGrid();
+  // 動態日期欄（D+1 ~ D+n）：每日只顯示漲跌%；收盤放 tooltip 太複雜，保持簡潔
+  const dayCols = [];
+  for (let i = 1; i <= n; i++) {
+    dayCols.push({name: `D+${i}`, width: "72px", formatter: pctOrDash});
+  }
+  const cols = [...fixedCols, ...dayCols];
+
+  const rows = rs.map(r => {
+    const fixed = [
+      String(r["代號"] ?? ""), r["股票名稱"] ?? "", r["市場"] ?? "", r["星等"] ?? "",
+      r["訊號日"] ?? "", num(r["訊號收盤"]),
+      ...(hasSeg ? [r["段起始日"] ?? "", num(r["段起始收盤"])] : []),
+      dashable(r["距訊號累計%"]),
+      ...(hasSeg ? [dashable(r["距段起點累計%"])] : []),
+      dashable(r["最高漲幅%"]),
+      dashable(r["距高回落%"]),
+      r["狀態"] ?? "",
+    ];
+    const days = [];
+    for (let i = 1; i <= n; i++) {
+      days.push(dashable(r[`D+${i}漲跌%`]));
+    }
+    return [...fixed, ...days];
+  });
+  gridInto($("#contGrid"), cols, rows, {limit: 50, placeholder: "搜尋代號 / 名稱 / 狀態…"});
+}
+
+// 工具函式
+function dashable(v) {
+  if (v === null || v === undefined || v === "" || v === "-") return null;
+  const n = parseFloat(String(v).replace(/[,%]/g, ""));
+  return isNaN(n) ? null : n;
+}
+function pctOrDash(c) {
+  if (c === null || c === undefined || c === "") return gridjs.html(`<span class="muted">—</span>`);
+  const v = num(c);
+  return gridjs.html(`<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${fmt2(v)}%</span>`);
+}
+function statusBadge(s) {
+  if (!s) return "";
+  if (s === "追蹤中") return `<span style="color:var(--accent)">${s}</span>`;
+  if (s === "結案")   return `<span class="muted">${s}</span>`;
+  return s;
 }
 
 /* ---------- 出關股追蹤 ---------- */
@@ -305,18 +409,40 @@ async function renderWinrate() {
   wr.forEach(r => { (groups[r["分類"]] ||= []).push(r); });
   let html = "";
   for (const [cat, recs] of Object.entries(groups)) {
-    html += `<h3>${cat}</h3><table class="simple"><thead><tr>
-      <th>分組</th><th>樣本數</th><th>D+5 勝率</th><th>D+5 均報酬</th><th>D+10 勝率</th><th>D+10 均報酬</th><th>D+15 勝率</th><th>D+15 均報酬</th>
-      </tr></thead><tbody>`;
+    html += `<h3>${cat}</h3>
+    <div style="overflow-x:auto">
+    <table class="simple"><thead>
+      <tr>
+        <th rowspan="2" style="vertical-align:middle">分組</th>
+        <th rowspan="2" style="vertical-align:middle">樣本數</th>
+        <th colspan="4" style="text-align:center;background:var(--panel)">D+5</th>
+        <th colspan="4" style="text-align:center;background:var(--panel)">D+10</th>
+        <th colspan="4" style="text-align:center;background:var(--panel)">D+15</th>
+      </tr>
+      <tr>
+        <th>樣本</th><th>勝率</th><th>均報酬</th><th>最大/最小</th>
+        <th>樣本</th><th>勝率</th><th>均報酬</th><th>最大/最小</th>
+        <th>樣本</th><th>勝率</th><th>均報酬</th><th>最大/最小</th>
+      </tr>
+    </thead><tbody>`;
     recs.forEach(r => {
-      const pct = (v, suf = "%") => v === null || v === undefined || v === "" ? "" : fmt1(v) + suf;
+      const pct1 = v => v === null || v === undefined || v === "" ? "—" : fmt1(v) + "%";
       const ret = v => { const n = num(v); return `<span class="${n >= 0 ? "up" : "down"}">${n >= 0 ? "+" : ""}${fmt2(n)}%</span>`; };
-      html += `<tr><td>${r["分組"] ?? ""}</td><td>${fmtInt(r["樣本數"])}</td>
-        <td>${pct(r["D+5_勝率%"])}</td><td>${ret(r["D+5_均報酬%"])}</td>
-        <td>${pct(r["D+10_勝率%"])}</td><td>${ret(r["D+10_均報酬%"])}</td>
-        <td>${pct(r["D+15_勝率%"])}</td><td>${ret(r["D+15_均報酬%"])}</td></tr>`;
+      const maxmin = (mx, mn) => {
+        const mxn = num(mx), mnn = num(mn);
+        const mxOk = mx !== null && mx !== undefined && mx !== "";
+        const mnOk = mn !== null && mn !== undefined && mn !== "";
+        return `<span class="up">${mxOk ? "+" + fmt1(mxn) + "%" : "—"}</span> / <span class="down">${mnOk ? fmt1(mnn) + "%" : "—"}</span>`;
+      };
+      html += `<tr>
+        <td>${r["分組"] ?? ""}</td>
+        <td>${fmtInt(r["樣本數"])}</td>
+        <td>${fmtInt(r["D+5_樣本"])}</td><td>${pct1(r["D+5_勝率%"])}</td><td>${ret(r["D+5_均報酬%"])}</td><td>${maxmin(r["D+5_最大%"], r["D+5_最小%"])}</td>
+        <td>${fmtInt(r["D+10_樣本"])}</td><td>${pct1(r["D+10_勝率%"])}</td><td>${ret(r["D+10_均報酬%"])}</td><td>${maxmin(r["D+10_最大%"], r["D+10_最小%"])}</td>
+        <td>${fmtInt(r["D+15_樣本"])}</td><td>${pct1(r["D+15_勝率%"])}</td><td>${ret(r["D+15_均報酬%"])}</td><td>${maxmin(r["D+15_最大%"], r["D+15_最小%"])}</td>
+      </tr>`;
     });
-    html += `</tbody></table>`;
+    html += `</tbody></table></div>`;
   }
   box.innerHTML = html || `<div class="loading">本日無勝率回測資料</div>`;
 }

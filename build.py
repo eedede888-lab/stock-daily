@@ -68,6 +68,8 @@ def num(v):
     if isinstance(v, (int, float)):
         return v
     s = str(v).strip().replace(",", "").replace("%", "")
+    if s == "" or s == "-":
+        return None
     try:
         f = float(s)
         return int(f) if f.is_integer() else f
@@ -149,11 +151,15 @@ def stock_json_ok(path):
 
 def process_market(market_file, out_path):
     SHEETS = {
-        "signals": ("今日放量訊號", "代號"),
-        "continuation": ("量能延續追蹤", "代號"),
-        "release": ("出關股追蹤", "代號"),
-        "disposed": ("處置股清單", "代號"),
-        "winrate": ("勝率回測", "分類"),
+        "signals":      ("今日放量訊號",   "代號"),
+        "continuation": ("量能延續追蹤",   "代號"),
+        "release":      ("出關股追蹤",     "代號"),
+        "disposed":     ("處置股清單",     "代號"),
+        "winrate":      ("勝率回測",       "分類"),
+        "track5":       ("5日追蹤",        "代號"),
+        "track10":      ("10日延伸",       "代號"),
+        "track15":      ("15日延伸",       "代號"),
+        "track15b":     ("15日再延伸",     "代號"),
     }
     data = {}
     for key, (sheet, hkey) in SHEETS.items():
