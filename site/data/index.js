@@ -1,6 +1,53 @@
 window.__DATAREG&&window.__DATAREG("index",{
   "dates": [
     {
+      "date": "20260617",
+      "label": "2026-06-17",
+      "has_market": true,
+      "stocks": [
+        {
+          "code": "2317",
+          "name": "鴻海",
+          "mkt": "TW"
+        },
+        {
+          "code": "2330",
+          "name": "台積電",
+          "mkt": "TW"
+        },
+        {
+          "code": "2344",
+          "name": "華邦電",
+          "mkt": "TW"
+        },
+        {
+          "code": "3037",
+          "name": "欣興",
+          "mkt": "TW"
+        },
+        {
+          "code": "3105",
+          "name": "穩懋",
+          "mkt": "TWO"
+        },
+        {
+          "code": "6257",
+          "name": "矽格",
+          "mkt": "TW"
+        },
+        {
+          "code": "6261",
+          "name": "久元",
+          "mkt": "TW"
+        },
+        {
+          "code": "8027",
+          "name": "鈦昇",
+          "mkt": "TWO"
+        }
+      ]
+    },
+    {
       "date": "20260616",
       "label": "2026-06-16",
       "has_market": true,
