@@ -642,21 +642,49 @@ window.__DATAREG&&window.__DATAREG("index",{
       ]
     },
     {
+      "wkey": "20260622-0625",
+      "label": "2026-06-22 ~ 2026-06-25",
+      "start": "20260622",
+      "end": "20260625",
+      "stocks": [
+        {
+          "code": "2344",
+          "name": "華邦電",
+          "mkt": "TW"
+        },
+        {
+          "code": "3037",
+          "name": "欣興",
+          "mkt": "TW"
+        },
+        {
+          "code": "3105",
+          "name": "穩懋",
+          "mkt": "TWO"
+        },
+        {
+          "code": "6239",
+          "name": "力成",
+          "mkt": "TW"
+        },
+        {
+          "code": "6257",
+          "name": "矽格",
+          "mkt": "TW"
+        },
+        {
+          "code": "6261",
+          "name": "久元",
+          "mkt": "TWO"
+        }
+      ]
+    },
+    {
       "wkey": "20260612-0618",
       "label": "2026-06-12 ~ 2026-06-18",
       "start": "20260612",
       "end": "20260618",
       "stocks": [
-        {
-          "code": "2317",
-          "name": "鴻海",
-          "mkt": "TW"
-        },
-        {
-          "code": "2330",
-          "name": "台積電",
-          "mkt": "TW"
-        },
         {
           "code": "2344",
           "name": "華邦電",
@@ -680,11 +708,6 @@ window.__DATAREG&&window.__DATAREG("index",{
         {
           "code": "6261",
           "name": "久元",
-          "mkt": "TW"
-        },
-        {
-          "code": "8027",
-          "name": "鈦昇",
           "mkt": "TWO"
         }
       ]
