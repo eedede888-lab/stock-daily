@@ -11,6 +11,11 @@ window.__DATAREG&&window.__DATAREG("index",{
           "mkt": "TW"
         },
         {
+          "code": "2317",
+          "name": "鴻海",
+          "mkt": "TW"
+        },
+        {
           "code": "2330",
           "name": "台積電",
           "mkt": "TW"
