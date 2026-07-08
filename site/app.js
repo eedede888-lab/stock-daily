@@ -174,11 +174,13 @@ async function renderContinuation() {
   try { m = await loadData(`${curDate}/market`); }
   catch (e) { box.innerHTML = `<div class="loading">本日無資料</div>`; $("#contCards").innerHTML = ""; return; }
 
+  const [t5, t10, t15, t15b] = await Promise.all(
+    ["track5","track10","track15","track15b"].map(k =>
+      loadData(`${curDate}/${k}`).catch(() => [])
+    )
+  );
+
   const cont  = m.continuation || [];
-  const t5    = m.track5  || [];
-  const t10   = m.track10 || [];
-  const t15   = m.track15 || [];
-  const t15b  = m.track15b|| [];
 
   // 統計數字
   const contStrong = cont.filter(r => String(r["延續類型"] || "").includes("強力")).length;
@@ -208,15 +210,11 @@ async function renderContinuation() {
     };
   });
 
-  applyContPeriod(m);
+  applyContPeriod(m, t5, t10, t15, t15b);
 }
 
-function applyContPeriod(m) {
+function applyContPeriod(m, t5, t10, t15, t15b) {
   const cont  = m.continuation || [];
-  const t5    = m.track5  || [];
-  const t10   = m.track10 || [];
-  const t15   = m.track15 || [];
-  const t15b  = m.track15b|| [];
 
   // 次日延續 ── 保持原有欄位
   if (contPeriod === "cont") {

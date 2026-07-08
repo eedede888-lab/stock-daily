@@ -150,19 +150,16 @@ def stock_json_ok(path):
         return False
 
 def process_market(market_file, out_path):
-    SHEETS = {
+    """主檔：signals/continuation/release/disposed/winrate（小資料）。"""
+    MAIN_SHEETS = {
         "signals":      ("今日放量訊號",   "代號"),
         "continuation": ("量能延續追蹤",   "代號"),
         "release":      ("出關股追蹤",     "代號"),
         "disposed":     ("處置股清單",     "代號"),
         "winrate":      ("勝率回測",       "分類"),
-        "track5":       ("5日追蹤",        "代號"),
-        "track10":      ("10日延伸",       "代號"),
-        "track15":      ("15日延伸",       "代號"),
-        "track15b":     ("15日再延伸",     "代號"),
     }
     data = {}
-    for key, (sheet, hkey) in SHEETS.items():
+    for key, (sheet, hkey) in MAIN_SHEETS.items():
         recs = to_records(rows_of(market_file, sheet), hkey)
         for rec in recs:
             for k, v in rec.items():
@@ -171,6 +168,25 @@ def process_market(market_file, out_path):
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
     return {k: len(v) for k, v in data.items()}
+
+
+TRACK_SHEETS = {
+    "track5":   ("5日追蹤",    "代號"),
+    "track10":  ("10日延伸",   "代號"),
+    "track15":  ("15日延伸",   "代號"),
+    "track15b": ("15日再延伸", "代號"),
+}
+
+def process_market_track(market_file, key, out_path):
+    """單張追蹤表獨立輸出（每張各自一個檔案，避免合併後超過 25MB）。"""
+    sheet, hkey = TRACK_SHEETS[key]
+    recs = to_records(rows_of(market_file, sheet), hkey)
+    for rec in recs:
+        for k, v in rec.items():
+            rec[k] = num(v)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(recs, f, ensure_ascii=False, separators=(",", ":"))
+    return len(recs)
 
 
 def process_stock(code, name, files, out_path):
@@ -594,6 +610,13 @@ def main():
                 print("  market.json (skip)", flush=True)
             else:
                 print("  market.json:", process_market(market, market_json), flush=True)
+            for tkey in TRACK_SHEETS:
+                tj = os.path.join(out_day, f"{tkey}.json")
+                if SKIP_EXISTING and market_json_ok(tj):
+                    print(f"  {tkey}.json (skip)", flush=True)
+                else:
+                    n = process_market_track(market, tkey, tj)
+                    print(f"  {tkey}.json: {n} 筆", flush=True)
         name_map = None
         stock_list = []
         for code in sorted(stocks):
