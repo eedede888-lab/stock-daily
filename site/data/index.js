@@ -1,6 +1,63 @@
 window.__DATAREG&&window.__DATAREG("index",{
   "dates": [
     {
+      "date": "20260709",
+      "label": "2026-07-09",
+      "has_market": true,
+      "stocks": [
+        {
+          "code": "2313",
+          "name": "華通",
+          "mkt": "TW"
+        },
+        {
+          "code": "2317",
+          "name": "鴻海",
+          "mkt": "TW"
+        },
+        {
+          "code": "2330",
+          "name": "台積電",
+          "mkt": "TW"
+        },
+        {
+          "code": "2344",
+          "name": "華邦電",
+          "mkt": "TW"
+        },
+        {
+          "code": "3037",
+          "name": "欣興",
+          "mkt": "TW"
+        },
+        {
+          "code": "3105",
+          "name": "穩懋",
+          "mkt": "TWO"
+        },
+        {
+          "code": "6239",
+          "name": "力成",
+          "mkt": "TW"
+        },
+        {
+          "code": "6257",
+          "name": "矽格",
+          "mkt": "TW"
+        },
+        {
+          "code": "6261",
+          "name": "久元",
+          "mkt": "TWO"
+        },
+        {
+          "code": "8027",
+          "name": "鈦昇",
+          "mkt": "TWO"
+        }
+      ]
+    },
+    {
       "date": "20260708",
       "label": "2026-07-08",
       "has_market": true,
@@ -1044,6 +1101,54 @@ window.__DATAREG&&window.__DATAREG("index",{
     }
   ],
   "weekly_dates": [
+    {
+      "wkey": "20260703-0709",
+      "label": "2026-07-03 ~ 2026-07-09",
+      "start": "20260703",
+      "end": "20260709",
+      "stocks": [
+        {
+          "code": "2313",
+          "name": "華通",
+          "mkt": "TW"
+        },
+        {
+          "code": "2344",
+          "name": "華邦電",
+          "mkt": "TW"
+        },
+        {
+          "code": "3037",
+          "name": "欣興",
+          "mkt": "TW"
+        },
+        {
+          "code": "3105",
+          "name": "穩懋",
+          "mkt": "TWO"
+        },
+        {
+          "code": "6239",
+          "name": "力成",
+          "mkt": "TW"
+        },
+        {
+          "code": "6257",
+          "name": "矽格",
+          "mkt": "TW"
+        },
+        {
+          "code": "6261",
+          "name": "久元",
+          "mkt": "TWO"
+        },
+        {
+          "code": "8027",
+          "name": "鈦昇",
+          "mkt": "TWO"
+        }
+      ]
+    },
     {
       "wkey": "20260626-0702",
       "label": "2026-06-26 ~ 2026-07-02",
