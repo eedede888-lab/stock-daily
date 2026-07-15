@@ -118,12 +118,15 @@ async function renderMarket() {
     {name: "量價關係", width: "124px"},
     {name: "×MA5", width: "86px", formatter: c => fmt1(c)},
     {name: "×MA20", width: "92px", formatter: c => fmt1(c)},
+    {name: "情境標記", width: "100px"},
+    {name: "處置狀態", width: "100px"},
     {name: "訊號說明", width: "260px"},
   ];
   const allRows = sig.map(r => [
     String(r["代號"] ?? ""), r["股票名稱"] ?? "", r["市場"] ?? "", r["訊號類型"] ?? "",
     r["訊號強度"] ?? "", num(r["當日量(張)"]), num(r["漲跌幅%"]), num(r["收盤價"]),
-    r["量價關係"] ?? "", num(r["較MA5倍"]), num(r["較MA20倍"]), r["訊號說明"] ?? "",
+    r["量價關係"] ?? "", num(r["較MA5倍"]), num(r["較MA20倍"]),
+    r["情境標記"] ?? "", r["處置狀態"] ?? "", r["訊號說明"] ?? "",
   ]);
 
   // 篩選狀態
@@ -182,12 +185,12 @@ async function renderContinuation() {
 
   const cont  = m.continuation || [];
 
-  // 統計數字
+  // 統計數字（狀態格式改為「追蹤中（N/X日）」，用 startsWith 判斷）
   const contStrong = cont.filter(r => String(r["延續類型"] || "").includes("強力")).length;
-  const t5Active   = t5.filter(r => r["狀態"] === "追蹤中").length;
-  const t10Active  = t10.filter(r => r["狀態"] === "追蹤中").length;
-  const t15Active  = t15.filter(r => r["狀態"] === "追蹤中").length;
-  const t15bActive = t15b.filter(r => r["狀態"] === "追蹤中").length;
+  const t5Active   = t5.filter(r => String(r["狀態"] || "").startsWith("追蹤中")).length;
+  const t10Active  = t10.filter(r => String(r["狀態"] || "").startsWith("追蹤中")).length;
+  const t15Active  = t15.filter(r => String(r["狀態"] || "").startsWith("追蹤中")).length;
+  const t15bActive = t15b.filter(r => String(r["狀態"] || "").startsWith("追蹤中")).length;
 
   const periods = [
     {id: "cp-cont",  key: "cont",  label: "次日延續",    sub: `強力 ${contStrong}`,  cnt: cont.length},
@@ -233,12 +236,14 @@ function applyContPeriod(m, t5, t10, t15, t15b) {
       {name: "次日收盤", width: "92px", formatter: c => fmt2(c)},
       {name: "次日漲跌幅%", width: "118px", formatter: pctCell},
       {name: "累計漲幅%", width: "108px", formatter: pctCell},
+      {name: "原始訊號類型", width: "120px"},
       {name: "原始星等", width: "92px", formatter: starCell},
     ];
     const rows = cont.map(r => [
       String(r["代號"] ?? ""), r["股票名稱"] ?? "", r["市場"] ?? "", r["延續類型"] ?? "",
       r["放量日期"] ?? "", num(r["放量量(張)"]), num(r["放量收盤"]), num(r["次日量(張)"]),
-      num(r["次日量/放量"]), num(r["次日收盤"]), num(r["次日漲跌幅%"]), num(r["累計漲幅%"]), r["原始星等"] ?? "",
+      num(r["次日量/放量"]), num(r["次日收盤"]), num(r["次日漲跌幅%"]), num(r["累計漲幅%"]),
+      r["原始訊號類型"] ?? "", r["原始星等"] ?? "",
     ]);
     gridInto($("#contGrid"), cols, rows);
     return;
@@ -246,38 +251,51 @@ function applyContPeriod(m, t5, t10, t15, t15b) {
 
   // 5日/10日/15日/15日再延伸 ── 共用動態欄位邏輯
   const MAP = {
-    t5:   {data: t5,   n: 5,  label: "5日追蹤"},
-    t10:  {data: t10,  n: 10, label: "10日延伸"},
-    t15:  {data: t15,  n: 15, label: "15日延伸"},
-    t15b: {data: t15b, n: 15, label: "15日再延伸"},
+    t5:   {data: t5,   label: "5日追蹤"},
+    t10:  {data: t10,  label: "10日延伸"},
+    t15:  {data: t15,  label: "15日延伸"},
+    t15b: {data: t15b, label: "15日再延伸"},
   };
-  const {data: rs, n} = MAP[contPeriod];
+  const {data: rs} = MAP[contPeriod];
   if (!rs.length) { document.getElementById("contGrid").innerHTML = `<div class="loading">本日無${MAP[contPeriod].label}資料</div>`; return; }
 
+  // 動態偵測最大 D+N（因為各週期實際追蹤天數不同，15日再延伸最多到 D+45）
+  const maxN = (() => {
+    let n = 0;
+    Object.keys(rs[0] || {}).forEach(k => {
+      const m = k.match(/^D\+(\d+)漲跌%$/);
+      if (m) n = Math.max(n, parseInt(m[1]));
+    });
+    return n;
+  })();
+
   // 固定欄
-  const hasSeg = rs[0] && "段起始日" in rs[0]; // 10日/15日 有「段起始」欄
+  const hasSeg = rs[0] && "段起始日" in rs[0];
   const fixedCols = [
-    {name: "代號",     width: "76px"},
-    {name: "名稱",     width: "96px"},
-    {name: "市場",     width: "74px"},
-    {name: "星等",     width: "80px", formatter: starCell},
-    {name: "訊號日",   width: "108px"},
-    {name: "訊號收盤", width: "84px", formatter: c => fmt2(c)},
+    {name: "代號",       width: "76px"},
+    {name: "名稱",       width: "96px"},
+    {name: "市場",       width: "74px"},
+    {name: "星等",       width: "80px", formatter: starCell},
+    {name: "訊號日",     width: "108px"},
+    {name: "訊號收盤",   width: "84px", formatter: c => fmt2(c)},
     ...(hasSeg ? [
       {name: "段起始日",   width: "108px"},
       {name: "段起始收盤", width: "90px", formatter: c => fmt2(c)},
     ] : []),
-    {name: "距訊號%",  width: "90px", formatter: pctOrDash},
+    {name: "距訊號%",    width: "90px", formatter: pctOrDash},
     ...(hasSeg ? [{name: "距段起%", width: "84px", formatter: pctOrDash}] : []),
-    {name: "最高漲%",  width: "84px", formatter: pctOrDash},
-    {name: "距高回落%",width: "90px", formatter: pctOrDash},
-    {name: "狀態",     width: "84px", formatter: c => gridjs.html(statusBadge(c))},
+    {name: "最高漲%",    width: "84px", formatter: pctOrDash},
+    {name: "距高回落%",  width: "90px", formatter: pctOrDash},
+    {name: "最大量比",   width: "84px", formatter: c => c == null ? gridjs.html(`<span class="muted">—</span>`) : fmt2(c)},
+    {name: "量能趨勢",   width: "110px"},
+    {name: "狀態",       width: "140px", formatter: c => gridjs.html(statusBadge(c))},
   ];
 
-  // 動態日期欄（D+1 ~ D+n）：每日只顯示漲跌%；收盤放 tooltip 太複雜，保持簡潔
+  // 動態 D+N 欄：每日顯示漲跌% + 量價
   const dayCols = [];
-  for (let i = 1; i <= n; i++) {
+  for (let i = 1; i <= maxN; i++) {
     dayCols.push({name: `D+${i}`, width: "72px", formatter: pctOrDash});
+    dayCols.push({name: `D+${i}量價`, width: "90px", formatter: c => c ? gridjs.html(`<span style="font-size:11px">${c}</span>`) : gridjs.html(`<span class="muted">—</span>`)});
   }
   const cols = [...fixedCols, ...dayCols];
 
@@ -290,11 +308,14 @@ function applyContPeriod(m, t5, t10, t15, t15b) {
       ...(hasSeg ? [dashable(r["距段起點累計%"])] : []),
       dashable(r["最高漲幅%"]),
       dashable(r["距高回落%"]),
+      dashable(r["段內最大量比"]),
+      r["量能趨勢"] ?? "",
       r["狀態"] ?? "",
     ];
     const days = [];
-    for (let i = 1; i <= n; i++) {
+    for (let i = 1; i <= maxN; i++) {
       days.push(dashable(r[`D+${i}漲跌%`]));
+      days.push(r[`D+${i}量價`] || null);
     }
     return [...fixed, ...days];
   });
@@ -314,8 +335,9 @@ function pctOrDash(c) {
 }
 function statusBadge(s) {
   if (!s) return "";
-  if (s === "追蹤中") return `<span style="color:var(--accent)">${s}</span>`;
-  if (s === "結案")   return `<span class="muted">${s}</span>`;
+  if (String(s).startsWith("追蹤中")) return `<span style="color:var(--accent)">${s}</span>`;
+  if (String(s).startsWith("晉升")) return `<span style="color:var(--star)">${s}</span>`;
+  if (s === "結案") return `<span class="muted">${s}</span>`;
   return s;
 }
 
@@ -344,6 +366,9 @@ async function renderRelease() {
     {name: "期間漲跌幅%", width: "118px", formatter: pctCell},
     {name: "最大單日漲%", width: "118px", formatter: pctCell},
     {name: "最大單日跌%", width: "118px", formatter: pctCell},
+    {name: "強漲日數(≥6%)", width: "120px", formatter: c => fmtInt(c)},
+    {name: "漲停次數", width: "92px", formatter: c => fmtInt(c)},
+    {name: "跌停次數", width: "92px", formatter: c => fmtInt(c)},
     {name: "訊號說明", width: "300px"},
     {name: "特殊標記", width: "180px"},
     {name: "備註", width: "180px"},
@@ -353,6 +378,7 @@ async function renderRelease() {
     num(r["處置天數"]), num(r["處置前收盤"]), num(r["出關量(張)"]), num(r["出關量/處置前"]),
     num(r["出關收盤"]), num(r["出關漲跌幅%"]), num(r["較處置前價格變化%"]), r["訊號強度"] ?? "",
     num(r["期間漲跌幅%"]), num(r["最大單日漲%"]), num(r["最大單日跌%"]),
+    num(r["強漲日數(≥6%)"]), num(r["漲停次數"]), num(r["跌停次數"]),
     r["訊號說明"] ?? "", r["特殊標記"] ?? "", r["備註"] ?? "",
   ]);
   gridInto(box, cols, rows, {limit: 20});
