@@ -1,0 +1,1 @@
+window.__DATAREG&&window.__DATAREG("20260730/8027",{"code":"8027","name":"鈦昇","buy_top":[],"sell_top":[],"price_volume":[],"broker_detail":[]});

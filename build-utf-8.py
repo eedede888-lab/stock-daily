@@ -224,23 +224,7 @@ def read_bsr_csv(csv_path):
     """讀 bsr_fetch.py 產出的乾淨 CSV → list：券商(raw)/股價(float)/買進股數/賣出股數(int)。"""
     import csv as _csv
     recs = []
-    raw = None
-    used_enc = None
-    for enc in ("utf-8-sig", "cp950", "big5", "gbk"):
-        try:
-            with open(csv_path, encoding=enc) as f:
-                raw = f.read()
-            used_enc = enc
-            break
-        except UnicodeDecodeError:
-            continue
-    if raw is None:
-        print(f"  [警告] 無法判斷編碼，略過此檔: {csv_path}")
-        return recs
-    if used_enc != "utf-8-sig":
-        print(f"  [警告] {csv_path} 非 UTF-8，改用 {used_enc} 讀取")
-    from io import StringIO
-    with StringIO(raw) as f:
+    with open(csv_path, encoding="utf-8-sig") as f:
         for r in _csv.DictReader(f):
             try:
                 px = round(float(str(r["股價"]).replace(",", "")), 2)
