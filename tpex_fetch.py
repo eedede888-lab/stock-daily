@@ -15,6 +15,11 @@
 按下會回傳**完整**單表 CSV。注意 **Turnstile token 是一次性**的——必須在拿到 token 後
 「直接」按下載鈕，不可先按「查詢」把 token 用掉，否則會下載到 0 byte 空檔。
 
+下載偵測：不使用 Playwright 的 expect_download/dl.path()（該機制透過 CDP 回報下載
+事件，實測會被 Chrome 版本更新影響而不可靠——按鈕確實被點到、Chrome 也確實把檔案存
+到磁碟，但 CDP 不一定通知 Playwright，導致永遠等不到事件而逾時）。改成指定固定下載
+資料夾（downloads_path），點擊後直接輪詢磁碟找新出現且大小穩定的檔案。
+
 下載到的 CSV 第 3 行起為「序號,券商,價格,買進股數,賣出股數」單欄表，轉成與 BSR 相同格式
 的乾淨 CSV（序號,券商,股價,買進股數,賣出股數），build.py / 下游可直接吃。
 
@@ -83,22 +88,52 @@ def _wait_turnstile(page, timeout_s=45):
     return ""
 
 
-def fetch_one(ctx, code, raw_dir):
+def _wait_new_stable_file(dl_dir, before_set, timeout_s=20):
+    """輪詢 dl_dir，找出新出現且大小已穩定不再變化的檔案，回傳完整路徑或 None。"""
+    deadline = time.time() + timeout_s
+    candidate = None
+    while time.time() < deadline:
+        now_set = set(os.listdir(dl_dir))
+        new_files = [f for f in (now_set - before_set) if not f.endswith((".crdownload", ".tmp"))]
+        if new_files:
+            newest = max(new_files, key=lambda f: os.path.getmtime(os.path.join(dl_dir, f)))
+            p1 = os.path.join(dl_dir, newest)
+            try:
+                s1 = os.path.getsize(p1)
+                time.sleep(0.6)
+                s2 = os.path.getsize(p1)
+            except OSError:
+                time.sleep(0.3); continue
+            if s1 == s2 and s1 > 0:
+                return p1
+            candidate = p1
+        time.sleep(0.4)
+    return candidate
+
+
+def fetch_one(ctx, code, raw_dir, dl_dir):
     """在持久化 context 開新分頁查一檔：等 Turnstile → 直接下載 CSV → 解析。
+    下載偵測改用「固定下載資料夾 + 輪詢磁碟」，不依賴 Playwright 的
+    expect_download/dl.path()（該機制對這個網站的下載事件回報不可靠，
+    點擊本身會成功但 CDP 不一定回報下載事件，導致永遠等不到而逾時）。
     回傳 (records | None, err)；err 為 None 表成功。"""
     page = ctx.new_page()
     try:
         page.goto(PAGE, wait_until="domcontentloaded", timeout=45000)
         time.sleep(1.5)
         page.fill("input.code", str(code))
+        page.keyboard.press("Escape")  # 關閉代號欄位的自動完成下拉選單（不影響下載按鈕，但保留較乾淨）
+        time.sleep(0.3)
         tok = _wait_turnstile(page)
         if not tok:
             return None, "turnstile-timeout（Turnstile 未自動過，可能需更新 patchright 或手動點一次）"
         # token 一次性：拿到後「直接」按下載 CSV(UTF-8)，不可先按查詢
-        with page.expect_download(timeout=25000) as dl_info:
-            page.click("#tables-form button.response[data-format='utf-8']", timeout=8000)
-        dl = dl_info.value
-        data = open(dl.path(), "rb").read()
+        before_set = set(os.listdir(dl_dir))
+        page.click("#tables-form button.response[data-format='utf-8']", timeout=8000)
+        dl_path = _wait_new_stable_file(dl_dir, before_set, timeout_s=20)
+        if not dl_path:
+            return None, "下載逾時（資料夾沒出現新檔案，token 可能已失效）"
+        data = open(dl_path, "rb").read()
         txt = data.decode("utf-8-sig", "replace")
         # 存原始下載供除錯/校正
         with open(os.path.join(raw_dir, f"{code}_tpex_raw.csv"), "w",
@@ -143,6 +178,8 @@ def main():
     out_dir = args.out or os.path.join(root, "data", date)
     os.makedirs(out_dir, exist_ok=True)
     profile = os.path.join(root, PROFILE_DIRNAME)
+    dl_dir = os.path.join(root, "_tpex_downloads")
+    os.makedirs(dl_dir, exist_ok=True)
 
     print(f"TPEx(上櫃) 抓取 {len(args.codes)} 檔 → {out_dir}", flush=True)
     ok = 0; failed = []
@@ -152,11 +189,11 @@ def main():
             launch_args += ["--window-position=-32000,-32000", "--window-size=1100,800"]
         ctx = p.chromium.launch_persistent_context(
             profile, channel="chrome", headless=False, no_viewport=True,
-            accept_downloads=True, args=launch_args)
+            accept_downloads=True, downloads_path=dl_dir, args=launch_args)
         try:
             for code in args.codes:
                 try:
-                    recs, err = fetch_one(ctx, code, out_dir)
+                    recs, err = fetch_one(ctx, code, out_dir, dl_dir)
                 except Exception as e:
                     print(f"  {code}: 例外 {type(e).__name__}: {e}", flush=True)
                     failed.append(code); continue
