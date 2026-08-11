@@ -487,6 +487,38 @@ def emit_js_wrappers():
             f.write("window.__DATAREG&&window.__DATAREG(" + json.dumps(key) + "," + content + ");")
 
 
+def process_history_log(csv_path, out_path):
+    """讀取 history_log.csv（累積快照），輸出為 site/data/history_log.json。
+    取最新那份 CSV（放在日期最新的資料夾裡），全量覆蓋輸出。"""
+    import csv as _csv
+    rows = []
+    for enc in ("utf-8-sig", "utf-8", "cp950"):
+        try:
+            with open(csv_path, encoding=enc, newline="") as f:
+                reader = _csv.DictReader(f)
+                rows = list(reader)
+            break
+        except (UnicodeDecodeError, FileNotFoundError):
+            continue
+    if not rows:
+        return 0
+    # 數值欄自動轉型
+    NUM_COLS = {"訊號總數", "★★★", "★★", "★", "TWSE均漲跌%", "TPEX均漲跌%",
+                "重複標記數", "重複率%", "CONTINUE數", "出關訊號數"}
+    out = []
+    for r in rows:
+        rec = {}
+        for k, v in r.items():
+            if k in NUM_COLS:
+                rec[k] = num(v)
+            else:
+                rec[k] = v
+        out.append(rec)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+    return len(out)
+
+
 def build_global_market_map(date_dirs):
     """跨所有日期累積 代號→Yahoo後綴；市場別穩定，避免某天沒進放量分頁就抓不到。"""
     g = {}
@@ -737,6 +769,21 @@ def main():
     built_n = len(built)
     print(f"\nindex.json: {len(index['dates'])} days (本次重建 {built_n} 天，合併保留 {len(index['dates']) - built_n} 天)、"
           f"{len(index['weekly_dates'])} weeks -> {OUT_DIR}", flush=True)
+
+    # ── history_log：找最新日期資料夾裡的 history_log.csv，全量覆蓋輸出 ──
+    hist_csv = None
+    for ddir in reversed(date_dirs):   # date_dirs 已排序，reversed 取最新
+        candidate = os.path.join(ddir, "history_log.csv")
+        if os.path.exists(candidate):
+            hist_csv = candidate
+            break
+    if hist_csv:
+        hist_json = os.path.join(OUT_DIR, "history_log.json")
+        n = process_history_log(hist_csv, hist_json)
+        print(f"history_log.json: {n} 筆 (來源: {os.path.basename(os.path.dirname(hist_csv))})", flush=True)
+    else:
+        print("history_log.csv: 未找到，略過", flush=True)
+
     emit_js_wrappers()
     print("emitted .js wrappers", flush=True)
 

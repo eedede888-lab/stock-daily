@@ -71,6 +71,7 @@ function render() {
   else if (curView === "winrate") renderWinrate();
   else if (curView === "stock") renderStock();
   else if (curView === "weekly") renderWeekly();
+  else if (curView === "history") renderHistory();
   // help：靜態內容，已在 index.html，無需渲染
 }
 
@@ -787,6 +788,133 @@ function renderBrokerChartsWeekly(d) {
   const sellTop=[...arr].sort((a,b)=>a[1]-b[1]).slice(0,20);
   if (buyTop.length) mk("wbc5",{type:"bar",data:{labels:buyTop.map(x=>x[0]),datasets:[{label:"買超(張)",data:buyTop.map(x=>x[1]),backgroundColor:C.up}]},options:netOpts("買超前20名（週）")});
   if (sellTop.length) mk("wbc6",{type:"bar",data:{labels:sellTop.map(x=>x[0]),datasets:[{label:"賣超(張)",data:sellTop.map(x=>x[1]),backgroundColor:C.down}]},options:netOpts("賣超前20名（週）")});
+}
+
+/* ========== 歷史快照 ========================================= */
+let histCharts = [];
+
+async function renderHistory() {
+  const cards = $("#histCards");
+  const chartsBox = $("#histCharts");
+  const gridBox = $("#histGrid");
+  gridBox.innerHTML = `<div class="loading">載入中…</div>`;
+  chartsBox.innerHTML = "";
+  cards.innerHTML = "";
+
+  let rows;
+  try { rows = await loadData("history_log"); }
+  catch (e) { gridBox.innerHTML = `<div class="loading">尚無歷史快照資料</div>`; return; }
+  if (!rows || !rows.length) { gridBox.innerHTML = `<div class="loading">尚無歷史快照資料</div>`; return; }
+
+  // ── 統計卡片 ──
+  const totals = rows.map(r => num(r["訊號總數"]));
+  const avgSig = Math.round(totals.reduce((a, b) => a + b, 0) / totals.length);
+  const maxSig = Math.max(...totals);
+  const flags  = rows.map(r => r["大盤旗標"] || "");
+  const bigDrop = flags.filter(f => f.includes("跌") && (f.includes("強") || f.includes("極"))).length;
+  const bigRise = flags.filter(f => f.includes("漲") && (f.includes("強") || f.includes("極"))).length;
+  cards.innerHTML = [
+    {k: "歷史交易日", v: rows.length},
+    {k: "平均訊號數", v: avgSig},
+    {k: "最高單日訊號", v: maxSig},
+    {k: "強/極跌日", v: bigDrop, cls: "down"},
+    {k: "強/極漲日", v: bigRise, cls: "up"},
+  ].map(c => `<div class="card"><div class="k">${c.k}</div><div class="v${c.cls ? ` ${c.cls}` : ""}">${fmtInt(c.v)}</div></div>`).join("");
+
+  // ── 圖表區 ──
+  histCharts.forEach(c => { try { c.destroy(); } catch (e) {} });
+  histCharts = [];
+  const C = {muted: "#8b9bb0", grid: "#2c3a4f", text: "#e6edf3"};
+  const labels = rows.map(r => (r["日期"] || "").slice(5));
+  const s1 = rows.map(r => num(r["★"]));
+  const s2 = rows.map(r => num(r["★★"]));
+  const s3 = rows.map(r => num(r["★★★"]));
+  const twse = rows.map(r => num(r["TWSE均漲跌%"]));
+  const tpex = rows.map(r => num(r["TPEX均漲跌%"]));
+
+  chartsBox.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:6px;font-size:12px;color:var(--muted);flex-wrap:wrap">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#2a78d6;margin-right:4px"></span>★ 注意</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#eda100;margin-right:4px"></span>★★ 中等</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#e34948;margin-right:4px"></span>★★★ 強烈</span>
+    </div>
+    <div class="chartbox" style="margin-bottom:12px"><canvas id="histStackChart" height="110"></canvas></div>
+    <div style="display:flex;gap:8px;margin-bottom:6px;font-size:12px;color:var(--muted)">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#2a78d6;margin-right:4px"></span>TWSE</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:18px;border-top:1.5px dashed #eb6834"></span>TPEX</span>
+    </div>
+    <div class="chartbox" style="margin-bottom:16px"><canvas id="histMktChart" height="70"></canvas></div>`;
+
+  const xCfg = {ticks: {color: C.muted, autoSkip: true, maxTicksLimit: 20, maxRotation: 45}, grid: {color: C.grid}};
+  const yCfg = {ticks: {color: C.muted}, grid: {color: C.grid}};
+
+  histCharts.push(new Chart(document.getElementById("histStackChart"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        {label: "★ 注意",   data: s1, backgroundColor: "#2a78d6", stack: "s"},
+        {label: "★★ 中等",  data: s2, backgroundColor: "#eda100", stack: "s"},
+        {label: "★★★ 強烈", data: s3, backgroundColor: "#e34948", stack: "s"},
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: {legend: {display: false}},
+      scales: {x: {...xCfg, stacked: true}, y: {...yCfg, stacked: true}}
+    }
+  }));
+
+  histCharts.push(new Chart(document.getElementById("histMktChart"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {label: "TWSE", data: twse, borderColor: "#2a78d6", backgroundColor: "transparent", borderWidth: 1.5, pointRadius: 1.5, tension: 0.2},
+        {label: "TPEX", data: tpex, borderColor: "#eb6834", backgroundColor: "transparent", borderWidth: 1.5, borderDash: [4, 3], pointRadius: 1.5, tension: 0.2},
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: {legend: {display: false}},
+      scales: {
+        x: xCfg,
+        y: {...yCfg, ticks: {...yCfg.ticks, callback: v => v.toFixed(1) + "%"}}
+      }
+    }
+  }));
+
+  // ── 完整歷史表格 ──
+  const flagColor = f => {
+    if (!f) return f;
+    if (f.includes("極漲") || f.includes("強漲")) return `<span class="up">${f}</span>`;
+    if (f.includes("極跌") || f.includes("強跌")) return `<span class="down">${f}</span>`;
+    if (f.includes("漲")) return `<span style="color:#ff9e9e">${f}</span>`;
+    if (f.includes("跌")) return `<span style="color:#79dfa6">${f}</span>`;
+    return `<span class="muted">${f}</span>`;
+  };
+  const cols = [
+    {name: "日期",        width: "108px"},
+    {name: "訊號總數",    width: "92px",  formatter: c => fmtInt(c)},
+    {name: "★★★",        width: "78px",  formatter: c => gridjs.html(`<span class="up">${fmtInt(c)}</span>`)},
+    {name: "★★",         width: "78px",  formatter: c => fmtInt(c)},
+    {name: "★",          width: "78px",  formatter: c => gridjs.html(`<span style="color:#2a78d6">${fmtInt(c)}</span>`)},
+    {name: "TWSE漲跌%",  width: "108px", formatter: c => { const v = num(c); return gridjs.html(`<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${fmt2(v)}%</span>`); }},
+    {name: "TPEX漲跌%",  width: "108px", formatter: c => { const v = num(c); return gridjs.html(`<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${fmt2(v)}%</span>`); }},
+    {name: "大盤旗標",   width: "100px", formatter: c => gridjs.html(flagColor(c))},
+    {name: "重複標記數", width: "100px", formatter: c => c == null ? gridjs.html(`<span class="muted">—</span>`) : fmtInt(c)},
+    {name: "重複率%",    width: "90px",  formatter: c => c == null ? gridjs.html(`<span class="muted">—</span>`) : gridjs.html(`${fmt1(c)}%`)},
+    {name: "CONTINUE數", width: "108px", formatter: c => fmtInt(c)},
+    {name: "出關訊號數", width: "100px", formatter: c => fmtInt(c)},
+  ];
+  const tableRows = [...rows].reverse().map(r => [
+    r["日期"] ?? "", num(r["訊號總數"]), num(r["★★★"]), num(r["★★"]), num(r["★"]),
+    num(r["TWSE均漲跌%"]), num(r["TPEX均漲跌%"]), r["大盤旗標"] ?? "",
+    r["重複標記數"] !== "" && r["重複標記數"] != null ? num(r["重複標記數"]) : null,
+    r["重複率%"] !== "" && r["重複率%"] != null ? num(r["重複率%"]) : null,
+    num(r["CONTINUE數"]), num(r["出關訊號數"]),
+  ]);
+  gridInto(gridBox, cols, tableRows, {limit: 50, placeholder: "搜尋日期 / 旗標…"});
 }
 
 init().catch(e => { document.querySelector("main").innerHTML = `<div class="loading">載入失敗：${e.message}<br>請確認 data 資料夾與 index.html 在一起</div>`; });
