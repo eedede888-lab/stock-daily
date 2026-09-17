@@ -183,6 +183,9 @@ def fetch_one(page, code, raw_dir, dl_dir, hide):
     page.on("dialog", lambda d: (
         print(f"  [{code}] 頁面跳出對話框：{d.message!r}，自動確認", flush=True),
         d.accept()))
+    page.on("crash", lambda: print(
+        f"  [{code}] ★分頁渲染行程當機（page crash）——這是 Chrome 自己壞掉，"
+        f"不是網站擋下載", flush=True))
     try:
         page.goto(PAGE, wait_until="domcontentloaded", timeout=45000)
         time.sleep(1.5)
@@ -282,22 +285,22 @@ def main():
 
     print(f"TPEx(上櫃) 抓取 {len(args.codes)} 檔 → {out_dir}", flush=True)
     ok = 0; failed = []
-    DL_ORIGIN_PATTERNS = ["https://www.tpex.org.tw,*", "https://www.tpex.org.tw:443,*",
-                          "[*.]tpex.org.tw,*"]
     with sync_playwright() as p:
-        launch_args = ["--no-first-run", "--no-default-browser-check"]
+        launch_args = ["--no-first-run", "--no-default-browser-check",
+                       "--disable-session-crashed-bubble", "--hide-crash-restore-bubble",
+                       "--disable-features=InfiniteSessionRestore,DownloadBubble,DownloadBubbleV2"]
         if args.hide:   # 視窗移到螢幕外，無人值守時不打擾（仍是真實 headful，Turnstile 可過）
             launch_args += ["--window-position=-32000,-32000", "--window-size=1100,800"]
 
         def launch_ctx():
-            _ensure_automatic_downloads_allowed(profile, DL_ORIGIN_PATTERNS)
             return p.chromium.launch_persistent_context(
                 profile, channel="chrome", headless=False, no_viewport=True,
                 accept_downloads=True, downloads_path=dl_dir, args=launch_args)
 
         ctx = launch_ctx()
         remaining = list(args.codes)
-        retry_budget = 3  # 整趟最多重啟 3 次瀏覽器
+        MAX_RETRY_PER_CODE = 3  # 每一檔各自最多重啟 3 次瀏覽器（不是整批共用）
+        retry_budget = MAX_RETRY_PER_CODE
         try:
             while remaining:
                 code = remaining[0]
@@ -319,16 +322,17 @@ def main():
                               f"{'OK' if balanced else '[!] 買賣不平衡(資料可能不完整)'}", flush=True)
                         ok += 1
                     remaining.pop(0)
+                    retry_budget = MAX_RETRY_PER_CODE  # 換下一檔，額度重新計算
                     time.sleep(1.0)
                 except Exception as e:
                     if not _looks_like_disconnect(e) or retry_budget <= 0:
                         print(f"  {code}: 無法復原的例外 {type(e).__name__}: {e}", flush=True)
                         failed.append(code); remaining.pop(0)
+                        retry_budget = MAX_RETRY_PER_CODE  # 換下一檔，額度重新計算
                         continue
                     retry_budget -= 1
-                    print(f"  瀏覽器連線中斷（常見原因：暫時性偵測波動或 Chrome 背景更新），"
-                          f"3 秒後重新啟動並從 {code} 繼續（剩餘重試次數 {retry_budget}）…",
-                          flush=True)
+                    print(f"  瀏覽器連線中斷，3 秒後重新啟動並從 {code} 繼續"
+                          f"（此檔剩餘重試次數 {retry_budget}）…", flush=True)
                     page = None
                     try:
                         ctx.close()
