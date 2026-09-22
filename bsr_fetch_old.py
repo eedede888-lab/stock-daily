@@ -23,13 +23,7 @@ import ddddocr
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 BASE = "https://bsr.twse.com.tw/bshtm/"
-UA = {
-    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                   "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-}
-IMG_HEADERS = {"Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"}
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
 _OCR = None
 def _ocr():
@@ -52,22 +46,21 @@ def _is_image(b):
     return b[:8].startswith((b"\x89PNG", b"GIF8", b"\xff\xd8"))
 
 
-def fetch_bsr_csv(code, max_tries=12, pause=1.5, verbose=True):
+def fetch_bsr_csv(code, max_tries=12, pause=0.8, verbose=True):
     """解驗證碼並下載某代號的 BSR 原始 CSV（big5 解碼後的字串）。
     回傳 CSV 字串／_NO_DATA（當日無資料）／None（重試耗盡或被限流）。"""
     code = str(code).strip()
     ocr = _ocr()
     throttle = 0
-    s = requests.Session(); s.headers.update(UA)   # 同一檔股票的所有重試共用一個 session（像真人同分頁重刷，而非每次都是新訪客）
     for i in range(1, max_tries + 1):
         try:
-            page_url = BASE + "bsMenu.aspx"
-            html = s.get(page_url, timeout=20, verify=False).text
+            s = requests.Session(); s.headers.update(UA)
+            html = s.get(BASE + "bsMenu.aspx", timeout=20, verify=False).text
             guid = re.search(r"CaptchaImage\.aspx\?guid=([0-9a-f-]+)", html)
             if not guid:
                 time.sleep(pause); continue
             img = s.get(BASE + "CaptchaImage.aspx?guid=" + guid.group(1),
-                        timeout=20, verify=False, headers={**IMG_HEADERS, "Referer": page_url}).content
+                        timeout=20, verify=False).content
             if not _is_image(img):       # 被限流：拿到非圖片擋頁 → 退避後重試
                 throttle += 1
                 wait = min(30, 3 * throttle)
@@ -87,11 +80,11 @@ def fetch_bsr_csv(code, max_tries=12, pause=1.5, verbose=True):
                 "CaptchaControl1": cap,
                 "btnOK": "查詢",
             }
-            r = s.post(page_url, data=data, timeout=20, verify=False, headers={"Referer": page_url})
+            r = s.post(BASE + "bsMenu.aspx", data=data, timeout=20, verify=False)
             m = re.search(r'id="HyperLink_DownloadCSV"\s+href="([^"]+)"', r.text)
             if m:
                 href = m.group(1).replace("&amp;", "&")
-                csv_bytes = s.get(BASE + href, timeout=40, verify=False, headers={"Referer": page_url}).content
+                csv_bytes = s.get(BASE + href, timeout=40, verify=False).content
                 if verbose:
                     print(f"  [{code}] try{i}: captcha {cap} OK, CSV {len(csv_bytes)} bytes", flush=True)
                 return csv_bytes.decode("big5", "replace")
@@ -193,7 +186,7 @@ def main():
         flag = "OK" if balanced else "[!] 買賣不平衡(資料可能不完整)"
         print(f"  {code}: {len(recs)} 筆，Σ買={buy:,} Σ賣={sell:,} {flag}", flush=True)
         ok += 1
-        time.sleep(3)   # 對伺服器客氣一點（原 1.5s 拉長，降低被判定為機器人的機率）
+        time.sleep(1.5)   # 對伺服器客氣一點
     print(f"完成 {ok}/{len(args.codes)}" + (f"；失敗：{','.join(failed)}" if failed else ""), flush=True)
     sys.exit(0 if ok == len(args.codes) else 1)
 
