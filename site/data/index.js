@@ -1,6 +1,28 @@
 window.__DATAREG&&window.__DATAREG("index",{
   "dates": [
     {
+      "date": "20260923",
+      "label": "2026-09-23",
+      "has_market": true,
+      "stocks": [
+        {
+          "code": "3105",
+          "name": "穩懋",
+          "mkt": "TWO"
+        },
+        {
+          "code": "6261",
+          "name": "久元",
+          "mkt": "TWO"
+        },
+        {
+          "code": "8027",
+          "name": "鈦昇",
+          "mkt": "TWO"
+        }
+      ]
+    },
+    {
       "date": "20260922",
       "label": "2026-09-22",
       "has_market": true,
