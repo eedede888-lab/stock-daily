@@ -1,0 +1,1 @@
+window.__DATAREG&&window.__DATAREG("20260930/2344",{"code":"2344","name":"華邦電","buy_top":[],"sell_top":[],"price_volume":[],"broker_detail":[]});

@@ -1,0 +1,1 @@
+window.__DATAREG&&window.__DATAREG("20260930/2313",{"code":"2313","name":"華通","buy_top":[],"sell_top":[],"price_volume":[],"broker_detail":[]});
