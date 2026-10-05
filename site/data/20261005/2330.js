@@ -1,0 +1,1 @@
+window.__DATAREG&&window.__DATAREG("20261005/2330",{"code":"2330","name":"台積電","buy_top":[],"sell_top":[],"price_volume":[],"broker_detail":[]});
