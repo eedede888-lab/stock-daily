@@ -1,0 +1,1 @@
+window.__DATAREG&&window.__DATAREG("20261007/6257",{"code":"6257","name":"矽格","buy_top":[],"sell_top":[],"price_volume":[],"broker_detail":[]});
